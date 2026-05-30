@@ -74,9 +74,9 @@ export function Header() {
 
                 {/* Right side items */}
                 <div className="hidden sm:flex items-center gap-3">
+                  <ThemeToggle />
                   <span className="text-zinc-300 dark:text-zinc-700">|</span>
                   {/* <HeaderPro /> */}
-                  <ThemeToggle />
                   <UserButton />
                 </div>
 
