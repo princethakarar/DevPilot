@@ -3,6 +3,8 @@ import { Geist, Geist_Mono } from "next/font/google";
 import { SessionProvider } from "next-auth/react";
 import { auth } from "@/auth";
 import "./globals.css";
+import { ThemeProvider } from "@/components/providers/theme-providers";
+import { cookies } from "next/headers";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -25,14 +27,29 @@ export default async function RootLayout({
   children: React.ReactNode;
 }>) {
   const session = await auth();
+  const cookieStore = await cookies();
+  const themeCookie = cookieStore.get("theme")?.value;
+  const themeClass = themeCookie ? themeCookie : "";
+  const colorScheme = themeCookie === "dark" ? "dark" : "light";
 
   return (
     <html
+      suppressHydrationWarning
       lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased ${themeClass}`}
+      style={{ colorScheme }}
     >
       <body className="min-h-full flex flex-col">
-        <SessionProvider session={session}>{children}</SessionProvider>
+        <SessionProvider session={session}>
+          <ThemeProvider
+            attribute="class"
+            defaultTheme="system"
+            enableSystem
+            disableTransitionOnChange
+          >
+            {children}
+          </ThemeProvider>
+        </SessionProvider>
       </body>
     </html>
   );
