@@ -23,8 +23,7 @@ export default async function DashboardLayout({
     const formattedPlaygroundData = playgroundData?.map((item) => ({
         id: item.id,
         name: item.title,
-        // starred:item.Starmark?.[0]?.isMarked || false,
-        starred: false, // Placeholder for starred status
+        starred:item.Starmark?.[0]?.isMarked || false,
         icon: technologyIconMap[item.template] || "Code2",
     })) ?? []
 
