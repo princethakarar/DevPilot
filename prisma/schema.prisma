@@ -1,7 +1,8 @@
 // This is your Prisma schema file,
 // learn more about it in the docs: https://pris.ly/d/prisma-schema
 
-// Get a free hosted Postgres database in seconds: `npx create-db`
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
 
 generator client {
   provider = "prisma-client-js"
@@ -13,39 +14,40 @@ datasource db {
 }
 
 enum UserRole {
-  USER
   ADMIN
+  USER
   PREMIUM_USER
 }
 
-model User{
-  id String @id @default(cuid()) @map("_id")
-  name String?
-  email String @unique
-  image String?
-  account Account[]
-  role UserRole @default(USER)
+model User {
+  id       String    @id @default(cuid()) @map("_id")
+  name     String?
+  email    String    @unique
+  image    String?
+  accounts Account[]
+  role     UserRole  @default(USER)
 
-  myplayground playground[]
+  myPlaground Playground[]
   staredPlayground StarMark[]
+  chatMessages ChatMessage[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
 
 model Account {
-  id                 String  @id @default(cuid()) @map("_id")
-  userId             String  @map("user_id")
-  type               String
-  provider           String
-  providerAccountId  String
-  refreshToken       String? @map("refresh_token")
-  accessToken        String? @map("access_token")
-  expiresAt          Int?    @map("expires_at")
-  tokenType          String? @map("token_type")
-  scope              String?
-  idToken            String? @map("id_token")
-  sessionState       String? @map("session_state")
+  id                String  @id @default(cuid()) @map("_id")
+  userId            String  @map("user_id")
+  type              String
+  provider          String
+  providerAccountId String
+  refreshToken      String? @map("refresh_token")
+  accessToken       String? @map("access_token")
+  expiresAt         Int?    @map("expires_at")
+  tokenType         String? @map("token_type")
+  scope             String?
+  idToken           String? @map("id_token")
+  sessionState      String? @map("session_state")
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -61,29 +63,52 @@ enum Templates {
   HONO
   ANGULAR
 }
-
-model playground {
-  id String @id @default(cuid()) @map("_id")
-  title String
+model Playground {
+  id  String @id @default(cuid()) @map("_id")
+  title  String
   description String?
-  template Templates  @default(REACT)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  Starmark StarMark[]
-  userId String
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  template   Templates  @default(REACT)
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime @updatedAt
+ 
+ Starmark   StarMark[]
+  userId  String
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  // todo template files
+  templateFiles TemplateFile[]
 }
+
 
 model StarMark {
-  id String @id @default(cuid()) @map("_id")
+  id  String @id @default(cuid()) @map("_id")
   userId String
   playgroundId String
-  isMarked Boolean
-  createdAt DateTime @default(now())
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-  playground playground @relation(fields: [playgroundId], references: [id], onDelete: Cascade)
+  isMarked  Boolean
+  createdAt  DateTime  @default(now())
+  user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  playground   Playground @relation(fields: [playgroundId], references: [id], onDelete: Cascade)
 
-  @@unique([userId, playgroundId])
+  @@unique([userId , playgroundId])
 }
+
+model TemplateFile {
+  id  String @id @default(cuid()) @map("_id")
+  content Json
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime @updatedAt
+  playgroundId String @unique
+  playground   Playground @relation(fields: [playgroundId], references: [id], onDelete: Cascade)
+}
+
+
+model ChatMessage {
+  id  String @id @default(cuid()) @map("_id")
+  userId String 
+  role   String  // "user" or "assitant"
+  content String
+  createdAt DateTime  @default(now())
+
+  user  User @relation(fields: [userId] , references: [id] , onDelete: Cascade)
+
+  @@index([userId])
+} 
