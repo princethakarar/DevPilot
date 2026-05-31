@@ -34,14 +34,12 @@ export function findFilePath(
  */
 export const generateFileId = (file: TemplateFile, rootFolder: TemplateFolder): string => {
   // Find the file's path in the folder structure
-  const path = findFilePath(file, rootFolder)?.replace(/^\/+/, '') || '';
-  
-  // Handle empty/undefined file extension
+  const path = findFilePath(file, rootFolder)?.replace(/^\/+/, '');
+  if (path) return path;
+
+  // Handle empty/undefined file extension as fallback
   const extension = file.fileExtension?.trim();
   const extensionSuffix = extension ? `.${extension}` : '';
 
-  // Combine path and filename
-  return path
-    ? `${path}/${file.filename}${extensionSuffix}`
-    : `${file.filename}${extensionSuffix}`;
+  return `${file.filename}${extensionSuffix}`;
 }

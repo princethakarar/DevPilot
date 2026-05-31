@@ -41,6 +41,9 @@ export const PlaygroundEditor = ({
   const suggestionAcceptedRef = useRef(false)
   const suggestionTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const tabCommandRef = useRef<any>(null)
+  const cursorListenerRef = useRef<any>(null)
+  const contentListenerRef = useRef<any>(null)
+  const isMountedRef = useRef(true)
 
   // Generate unique ID for each suggestion
   const generateSuggestionId = () => `suggestion-${Date.now()}-${Math.random()}`
@@ -134,8 +137,13 @@ export const PlaygroundEditor = ({
     console.log("Clearing current suggestion")
     currentSuggestionRef.current = null
     suggestionAcceptedRef.current = false
-    if (editorRef.current) {
-      editorRef.current.trigger("ai", "editor.action.inlineSuggest.hide", null)
+    const editor = editorRef.current
+    if (isMountedRef.current && editor && typeof editor.trigger === "function" && !editor.isDisposed?.()) {
+      try {
+        editor.trigger("ai", "editor.action.inlineSuggest.hide", null)
+      } catch (e) {
+        console.warn("Failed to hide inline suggest:", e)
+      }
     }
   }, [])
 
@@ -345,9 +353,6 @@ export const PlaygroundEditor = ({
     })
 
     // CRITICAL: Override Tab key with high priority and prevent default Monaco behavior
-    if (tabCommandRef.current) {
-      tabCommandRef.current.dispose()
-    }
 
     tabCommandRef.current = editor.addCommand(
       monaco.KeyCode.Tab,
@@ -400,8 +405,12 @@ export const PlaygroundEditor = ({
       }
     })
 
+    if (cursorListenerRef.current) {
+      cursorListenerRef.current.dispose()
+    }
     // Listen for cursor position changes to hide suggestions when moving away
-    editor.onDidChangeCursorPosition((e: any) => {
+    cursorListenerRef.current = editor.onDidChangeCursorPosition((e: any) => {
+      if (!isMountedRef.current || editor.isDisposed?.()) return
       if (isAcceptingSuggestionRef.current) return
 
       const newPosition = e.position
@@ -431,13 +440,19 @@ export const PlaygroundEditor = ({
 
         // Trigger suggestion with a delay
         suggestionTimeoutRef.current = setTimeout(() => {
-          onTriggerSuggestion("completion", editor)
+          if (isMountedRef.current && editorRef.current && !editorRef.current.isDisposed?.()) {
+            onTriggerSuggestion("completion", editor)
+          }
         }, 300)
       }
     })
 
+    if (contentListenerRef.current) {
+      contentListenerRef.current.dispose()
+    }
     // Listen for content changes to detect manual typing over suggestions
-    editor.onDidChangeModelContent((e: any) => {
+    contentListenerRef.current = editor.onDidChangeModelContent((e: any) => {
+      if (!isMountedRef.current || editor.isDisposed?.()) return
       if (isAcceptingSuggestionRef.current) return
 
       // If user types while there's a suggestion, clear it (unless it's our insertion)
@@ -474,7 +489,7 @@ export const PlaygroundEditor = ({
           change.text === ";" // Statement end
         ) {
           setTimeout(() => {
-            if (editorRef.current && !currentSuggestionRef.current && !suggestionLoading) {
+            if (isMountedRef.current && editorRef.current && !editorRef.current.isDisposed?.() && !currentSuggestionRef.current && !suggestionLoading) {
               onTriggerSuggestion("completion", editor)
             }
           }, 100) // Small delay to let the change settle
@@ -504,7 +519,9 @@ export const PlaygroundEditor = ({
 
   // Cleanup on unmount
   useEffect(() => {
+    isMountedRef.current = true
     return () => {
+      isMountedRef.current = false
       if (suggestionTimeoutRef.current) {
         clearTimeout(suggestionTimeoutRef.current)
       }
@@ -513,8 +530,15 @@ export const PlaygroundEditor = ({
         inlineCompletionProviderRef.current = null
       }
       if (tabCommandRef.current) {
-        tabCommandRef.current.dispose()
         tabCommandRef.current = null
+      }
+      if (cursorListenerRef.current) {
+        cursorListenerRef.current.dispose()
+        cursorListenerRef.current = null
+      }
+      if (contentListenerRef.current) {
+        contentListenerRef.current.dispose()
+        contentListenerRef.current = null
       }
     }
   }, [])
