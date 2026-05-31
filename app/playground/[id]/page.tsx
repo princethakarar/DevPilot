@@ -105,10 +105,10 @@ const MainPlaygroundPage = () => {
   }, [id, setPlaygroundId]);
 
   useEffect(() => {
-    if (templateData && !openFiles.length) {
+    if (templateData) {
       setTemplateData(templateData);
     }
-  }, [templateData, setTemplateData, openFiles.length]);
+  }, [templateData, setTemplateData]);
 
   // Create wrapper functions that pass saveTemplateData
   const wrappedHandleAddFile = useCallback(
@@ -443,7 +443,7 @@ const MainPlaygroundPage = () => {
             </div>
           </header>
 
-          <div className="h-[calc(100vh-4rem)]">
+          <div className="flex-1 flex flex-col min-h-0">
             {openFiles.length > 0 ? (
               <div className="h-full flex flex-col">
                 <div className="border-b bg-muted/30">
@@ -457,7 +457,7 @@ const MainPlaygroundPage = () => {
                           <TabsTrigger
                             key={file.id}
                             value={file.id}
-                            className="relative h-8 px-3 data-[state=active]:bg-background data-[state=active]:shadow-sm group"
+                            className="playground-tab relative h-8 px-3 data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-md transition-all cursor-pointer"
                           >
                             <div className="flex items-center gap-2">
                               <FileText className="h-3 w-3" />
@@ -468,13 +468,13 @@ const MainPlaygroundPage = () => {
                                 <span className="h-2 w-2 rounded-full bg-orange-500" />
                               )}
                               <span
-                                className="ml-2 h-4 w-4 hover:bg-destructive hover:text-destructive-foreground rounded-sm flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+                                className="close-btn ml-2 h-4 w-4 hover:bg-destructive hover:text-destructive-foreground rounded-sm flex items-center justify-center transition-opacity cursor-pointer"
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   closeFile(file.id);
                                 }}
                               >
-                                <X className="h-3 w-3" />
+                                <X className="size-3" />
                               </span>
                             </div>
                           </TabsTrigger>
@@ -541,7 +541,7 @@ const MainPlaygroundPage = () => {
                 </div>
               </div>
             ) : (
-              <div className="flex flex-col h-full items-center justify-center text-muted-foreground gap-4">
+              <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground gap-4">
                 <FileText className="h-16 w-16 text-gray-300" />
                 <div className="text-center">
                   <p className="text-lg font-medium">No files open</p>

@@ -128,3 +128,31 @@
     @apply font-sans;
   }
 }
+
+/* Playground tab custom hover effects */
+.playground-tab:hover {
+  background-color: var(--muted) !important;
+}
+
+.playground-tab[data-state="active"]:hover {
+  background-color: var(--background) !important;
+}
+
+.dark .playground-tab[data-state="active"]:hover {
+  background-color: var(--accent) !important;
+}
+
+.playground-tab .close-btn {
+  opacity: 0;
+  transition: opacity 0.15s, background-color 0.15s !important;
+}
+
+.playground-tab:hover .close-btn,
+.playground-tab[data-state="active"] .close-btn {
+  opacity: 0.6;
+}
+
+.playground-tab:hover .close-btn:hover,
+.playground-tab[data-state="active"] .close-btn:hover {
+  opacity: 1 !important;
+}

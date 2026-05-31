@@ -42,8 +42,16 @@ export const useAISuggestions = (): UseAISuggestionsReturn => {
                 return currentState
             }
 
-            const model = editor.getModel();
-            const cursorPosition = editor.getPosition()
+            let model = null;
+            let cursorPosition = null;
+            try {
+                if (typeof editor.getModel === 'function' && !editor.isDisposed?.()) {
+                    model = editor.getModel();
+                    cursorPosition = editor.getPosition();
+                }
+            } catch (e) {
+                return currentState;
+            }
 
             if (!model || !cursorPosition) {
                 return currentState
@@ -103,42 +111,44 @@ export const useAISuggestions = (): UseAISuggestionsReturn => {
     }, [])
 
 
-    const acceptSuggestion = useCallback(() => {
-        (editor: any, monaco: any) => {
-            setState((currentState) => {
-                if (!currentState.suggestion || !currentState.position || !editor || !monaco) {
-                    return currentState;
+    const acceptSuggestion = useCallback((editor: any, monaco: any) => {
+        setState((currentState) => {
+            if (!currentState.suggestion || !currentState.position || !editor || !monaco) {
+                return currentState;
+            }
+
+            const { line, column } = currentState.position;
+            const sanitizedSuggestion = currentState.suggestion.replace(/^\d+:\s*/gm, "");
+
+            editor.executeEdits("", [
+                {
+                    range: new monaco.Range(line, column, line, column),
+                    text: sanitizedSuggestion,
+                    forceMoveMarkers: true,
                 }
+            ]);
 
-                const { line, column } = currentState.position;
-                const sanitizedSuggestion = currentState.suggestion.replace(/^\d+:\s*/gm, "");
+            if(editor && currentState.decoration.length > 0){
+                editor.deltaDecorations(currentState.decoration , [])
+            }
 
-                editor.executeEdits("", [
-                    {
-                        range: new monaco.Range(line, column, line, column),
-                        text: sanitizedSuggestion,
-                        forceMoveMarkers: true,
-                    }
-                ]);
-
-                if(editor && currentState.decoration.length > 0){
-                    editor.deltaDecorations(currentState.decoration , [])
-                }
-
-                return {
-                    ...currentState,
-                    suggestion:null,
-                    position:null,
-                    decoration:[]
-                }
-            })
-        }
+            return {
+                ...currentState,
+                suggestion:null,
+                position:null,
+                decoration:[]
+            }
+        })
     }, [])
 
     const rejectSuggestion = useCallback((editor:any)=>{
             setState((currentState)=>{
-                 if(editor && currentState.decoration.length > 0){
-                    editor.deltaDecorations(currentState.decoration , [])
+                 if(editor && typeof editor.deltaDecorations === 'function' && !editor.isDisposed?.() && currentState.decoration.length > 0){
+                    try {
+                        editor.deltaDecorations(currentState.decoration , [])
+                    } catch (e) {
+                        console.warn("Failed to clear delta decorations:", e)
+                    }
                 }
 
                 return {
@@ -152,8 +162,12 @@ export const useAISuggestions = (): UseAISuggestionsReturn => {
  
     const clearSuggestion = useCallback((editor: any) => {
     setState((currentState) => {
-      if (editor && currentState.decoration.length > 0) {
-        editor.deltaDecorations(currentState.decoration, []);
+      if (editor && typeof editor.deltaDecorations === 'function' && !editor.isDisposed?.() && currentState.decoration.length > 0) {
+        try {
+            editor.deltaDecorations(currentState.decoration, []);
+        } catch (e) {
+            console.warn("Failed to clear decorations:", e);
+        }
       }
       return {
         ...currentState,

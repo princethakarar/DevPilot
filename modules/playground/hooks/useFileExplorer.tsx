@@ -32,7 +32,7 @@ interface FileExplorerState {
   closeAllFiles: () => void;
 
   // File explorer methods
-   handleAddFile: (
+  handleAddFile: (
     newFile: TemplateFile,
     parentPath: string,
     writeFileSync: (filePath: string, content: string) => Promise<void>,
@@ -119,7 +119,7 @@ export const useFileExplorer = create<FileExplorerState>((set, get) => ({
     const {openFiles , activeFileId} = get();
      const newFiles = openFiles.filter((f) => f.id !== fileId);
 
-      // If we're closing the active file, switch to another file or clear active
+    // If we're closing the active file, switch to another file or clear active
     let newActiveFileId = activeFileId;
     let newEditorContent = get().editorContent;
 
@@ -340,8 +340,10 @@ export const useFileExplorer = create<FileExplorerState>((set, get) => ({
 
     // Generate old and new file IDs using the same logic as openFile
     const oldFileId = generateFileId(file, templateData);
-    const newFile = { ...file, filename: newFilename, fileExtension: newExtension };
-    const newFileId = generateFileId(newFile, templateData);
+    const cleanParentPath = parentPath.replace(/^\/+/, '');
+    const newFileId = cleanParentPath
+      ? `${cleanParentPath}/${newFilename}.${newExtension}`
+      : `${newFilename}.${newExtension}`;
 
     try {
       const updatedTemplateData = JSON.parse(
