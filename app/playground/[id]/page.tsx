@@ -34,8 +34,8 @@ import {
   TemplateFile,
   TemplateFolder,
 } from "@/modules/playground/lib/path-to-json";
-// import WebContainerPreview from "@/modules/webcontainers/components/webcontainer-preview";
-// import { useWebContainer } from "@/modules/webcontainers/hooks/useWebContainer";
+import WebContainerPreview from "@/modules/webcontainers/components/webcontainer-preview";
+import { useWebContainer } from "@/modules/webcontainers/hooks/useWebContainer";
 import {
   AlertCircle,
   Bot,
@@ -84,19 +84,13 @@ const MainPlaygroundPage = () => {
     updateFileContent
   } = useFileExplorer();
 
-  // TODO: WebContainer functionality not yet implemented
-  // const {
-  //   serverUrl,
-  //   isLoading: containerLoading,
-  //   error: containerError,
-  //   instance,
-  //   writeFileSync,
-  // } = useWebContainer({ templateData });
-  const serverUrl: string | null = null;
-  const containerLoading = false;
-  const containerError: string | null = null;
-  const instance: any = null;
-  const writeFileSync: any = null;
+  const {
+    serverUrl,
+    isLoading: containerLoading,
+    error: containerError,
+    instance,
+    writeFileSync,
+  } = useWebContainer({ templateData });
 
   const lastSyncedContent = useRef<Map<string, string>>(new Map());
 
@@ -520,8 +514,7 @@ const MainPlaygroundPage = () => {
                       />
                     </ResizablePanel>
 
-                    {/* TODO: WebContainer preview not yet implemented */}
-                    {/* {isPreviewVisible && (
+                    {isPreviewVisible && (
                       <>
                         <ResizableHandle />
                         <ResizablePanel defaultSize={50}>
@@ -536,7 +529,7 @@ const MainPlaygroundPage = () => {
                           />
                         </ResizablePanel>
                       </>
-                    )} */}
+                    )}
                   </ResizablePanelGroup>
                 </div>
               </div>
