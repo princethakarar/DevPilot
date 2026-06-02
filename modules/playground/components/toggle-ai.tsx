@@ -26,10 +26,6 @@ import {
 } from "lucide-react";
 import React from "react";
 import { cn } from "@/lib/utils";
-// import { AIChatSidePanel } from "@/modules/ai-chat/components/ai-chat-sidebarpanel";
-
-
-
 interface ToggleAIProps {
   isEnabled: boolean;
   onToggle: (value: boolean) => void;
@@ -37,6 +33,8 @@ interface ToggleAIProps {
   suggestionLoading: boolean;
   loadingProgress?: number;
   activeFeature?: string;
+  isChatOpen: boolean;
+  onToggleChat: (value: boolean) => void;
 }
 
 const ToggleAI: React.FC<ToggleAIProps> = ({
@@ -46,8 +44,9 @@ const ToggleAI: React.FC<ToggleAIProps> = ({
   suggestionLoading,
   loadingProgress = 0,
   activeFeature,
+  isChatOpen,
+  onToggleChat,
 }) => {
-  const [isChatOpen, setIsChatOpen] = useState(false);
 
   return (
     <>
@@ -151,13 +150,15 @@ const ToggleAI: React.FC<ToggleAIProps> = ({
           <DropdownMenuSeparator />
           
           <DropdownMenuItem 
-            onClick={() => setIsChatOpen(true)}
+            onClick={() => onToggleChat(!isChatOpen)}
             className="py-2.5 cursor-pointer"
           >
             <div className="flex items-center gap-3 w-full">
               <FileText className="h-4 w-4 text-muted-foreground" />
               <div>
-                <div className="text-sm font-medium">Open Chat</div>
+                <div className="text-sm font-medium">
+                  {isChatOpen ? "Close Chat" : "Open Chat"}
+                </div>
                 <div className="text-xs text-muted-foreground">
                   Chat with AI assistant
                 </div>
@@ -166,12 +167,6 @@ const ToggleAI: React.FC<ToggleAIProps> = ({
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
-
-{/* <AIChatSidePanel
-isOpen={isChatOpen}
-onClose={() => setIsChatOpen(false)}
-
-/> */}
     </>
   );
 };

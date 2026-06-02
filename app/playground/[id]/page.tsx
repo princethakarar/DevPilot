@@ -27,6 +27,7 @@ import {PlaygroundEditor} from "@/modules/playground/components/playground-edito
 import { TemplateFileTree } from "@/modules/playground/components/playground-explorer";
 import ToggleAI from "@/modules/playground/components/toggle-ai";
 import { useAISuggestions } from "@/modules/playground/hooks/useAISuggestion";
+import { AIChatSidePanel } from "@/modules/ai-chat/components/ai-chat-sidebarpanel";
 import { useFileExplorer } from "@/modules/playground/hooks/useFileExplorer";
 import { usePlayground } from "@/modules/playground/hooks/usePlayground";
 import { findFilePath } from "@/modules/playground/lib";
@@ -58,6 +59,7 @@ import { toast } from "sonner";
 const MainPlaygroundPage = () => {
   const { id } = useParams<{ id: string }>();
   const [isPreviewVisible, setIsPreviewVisible] = useState(true);
+  const [isChatOpen, setIsChatOpen] = useState(false);
 
   const { playgroundData, templateData, isLoading, error, saveTemplateData } =
     usePlayground(id);
@@ -413,6 +415,8 @@ const MainPlaygroundPage = () => {
                 isEnabled={aiSuggestions.isEnabled}
                 onToggle={aiSuggestions.toggleEnabled}
                 suggestionLoading={aiSuggestions.isLoading}
+                isChatOpen={isChatOpen}
+                onToggleChat={setIsChatOpen}
                />
 
                 <DropdownMenu>
@@ -438,111 +442,120 @@ const MainPlaygroundPage = () => {
           </header>
 
           <div className="flex-1 flex flex-col min-h-0">
-            {openFiles.length > 0 ? (
-              <div className="h-full flex flex-col">
-                <div className="border-b bg-muted/30">
-                  <Tabs
-                    value={activeFileId || ""}
-                    onValueChange={setActiveFileId}
-                  >
-                    <div className="flex items-center justify-between px-4 py-2">
-                      <TabsList className="h-8 bg-transparent p-0">
-                        {openFiles.map((file) => (
-                          <TabsTrigger
-                            key={file.id}
-                            value={file.id}
-                            className="playground-tab relative h-8 px-3 data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-md transition-all cursor-pointer"
-                          >
-                            <div className="flex items-center gap-2">
-                              <FileText className="h-3 w-3" />
-                              <span>
-                                {file.filename}.{file.fileExtension}
-                              </span>
-                              {file.hasUnsavedChanges && (
-                                <span className="h-2 w-2 rounded-full bg-orange-500" />
-                              )}
-                              <span
-                                className="close-btn ml-2 h-4 w-4 hover:bg-destructive hover:text-destructive-foreground rounded-sm flex items-center justify-center transition-opacity cursor-pointer"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  closeFile(file.id);
-                                }}
+            {isChatOpen ? (
+              <AIChatSidePanel
+                isOpen={isChatOpen}
+                onClose={() => setIsChatOpen(false)}
+              />
+            ) : (
+              <>
+                {openFiles.length > 0 ? (
+                  <div className="h-full flex flex-col">
+                    <div className="border-b bg-muted/30">
+                      <Tabs
+                        value={activeFileId || ""}
+                        onValueChange={setActiveFileId}
+                      >
+                        <div className="flex items-center justify-between px-4 py-2">
+                          <TabsList className="h-8 bg-transparent p-0">
+                            {openFiles.map((file) => (
+                              <TabsTrigger
+                                key={file.id}
+                                value={file.id}
+                                className="playground-tab relative h-8 px-3 data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-md transition-all cursor-pointer"
                               >
-                                <X className="size-3" />
-                              </span>
-                            </div>
-                          </TabsTrigger>
-                        ))}
-                      </TabsList>
+                                <div className="flex items-center gap-2">
+                                  <FileText className="h-3 w-3" />
+                                  <span>
+                                    {file.filename}.{file.fileExtension}
+                                  </span>
+                                  {file.hasUnsavedChanges && (
+                                    <span className="h-2 w-2 rounded-full bg-orange-500" />
+                                  )}
+                                  <span
+                                    className="close-btn ml-2 h-4 w-4 hover:bg-destructive hover:text-destructive-foreground rounded-sm flex items-center justify-center transition-opacity cursor-pointer"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      closeFile(file.id);
+                                    }}
+                                  >
+                                    <X className="size-3" />
+                                  </span>
+                                </div>
+                              </TabsTrigger>
+                            ))}
+                          </TabsList>
 
-                      {openFiles.length > 1 && (
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={closeAllFiles}
-                          className="h-6 px-2 text-xs"
-                        >
-                          Close All
-                        </Button>
-                      )}
+                          {openFiles.length > 1 && (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={closeAllFiles}
+                              className="h-6 px-2 text-xs"
+                            >
+                              Close All
+                            </Button>
+                          )}
+                        </div>
+                      </Tabs>
                     </div>
-                  </Tabs>
-                </div>
-                <div className="flex-1">
-                  <ResizablePanelGroup
-                    direction="horizontal"
-                    className="h-full"
-                  >
-                    <ResizablePanel defaultSize={isPreviewVisible ? 50 : 100}>
-                      <PlaygroundEditor
-                        activeFile={activeFile}
-                        content={activeFile?.content || ""}
-                        onContentChange={(value) => 
-                          activeFileId && updateFileContent(activeFileId , value)
-                        }
-                        suggestion={aiSuggestions.suggestion}
-                        suggestionLoading={aiSuggestions.isLoading}
-                        suggestionPosition={aiSuggestions.position}
-                        onAcceptSuggestion={(editor , monaco)=>aiSuggestions.acceptSuggestion(editor , monaco)}
+                    <div className="flex-1">
+                      <ResizablePanelGroup
+                        direction="horizontal"
+                        className="h-full"
+                      >
+                        <ResizablePanel defaultSize={isPreviewVisible ? 50 : 100}>
+                          <PlaygroundEditor
+                            activeFile={activeFile}
+                            content={activeFile?.content || ""}
+                            onContentChange={(value) => 
+                              activeFileId && updateFileContent(activeFileId , value)
+                            }
+                            suggestion={aiSuggestions.suggestion}
+                            suggestionLoading={aiSuggestions.isLoading}
+                            suggestionPosition={aiSuggestions.position}
+                            onAcceptSuggestion={(editor , monaco)=>aiSuggestions.acceptSuggestion(editor , monaco)}
 
-                          onRejectSuggestion={(editor) =>
-                          aiSuggestions.rejectSuggestion(editor)
-                        }
-                        onTriggerSuggestion={(type, editor) =>
-                          aiSuggestions.fetchSuggestion(type, editor)
-                        }
-                      />
-                    </ResizablePanel>
-
-                    {isPreviewVisible && (
-                      <>
-                        <ResizableHandle />
-                        <ResizablePanel defaultSize={50}>
-                          <WebContainerPreview
-                            templateData={templateData}
-                            instance={instance}
-                            writeFileSync={writeFileSync}
-                            isLoading={containerLoading}
-                            error={containerError}
-                            serverUrl={serverUrl!}
-                            forceResetup={false}
+                              onRejectSuggestion={(editor) =>
+                              aiSuggestions.rejectSuggestion(editor)
+                            }
+                            onTriggerSuggestion={(type, editor) =>
+                              aiSuggestions.fetchSuggestion(type, editor)
+                            }
                           />
                         </ResizablePanel>
-                      </>
-                    )}
-                  </ResizablePanelGroup>
-                </div>
-              </div>
-            ) : (
-              <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground gap-4">
-                <FileText className="h-16 w-16 text-gray-300" />
-                <div className="text-center">
-                  <p className="text-lg font-medium">No files open</p>
-                  <p className="text-sm text-gray-500">
-                    Select a file from the sidebar to start editing
-                  </p>
-                </div>
-              </div>
+
+                        {isPreviewVisible && (
+                          <>
+                            <ResizableHandle />
+                            <ResizablePanel defaultSize={50}>
+                              <WebContainerPreview
+                                templateData={templateData}
+                                instance={instance}
+                                writeFileSync={writeFileSync}
+                                isLoading={containerLoading}
+                                error={containerError}
+                                serverUrl={serverUrl!}
+                                forceResetup={false}
+                              />
+                            </ResizablePanel>
+                          </>
+                        )}
+                      </ResizablePanelGroup>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="h-full w-full flex flex-col items-center justify-center text-muted-foreground gap-4">
+                    <FileText className="h-16 w-16 text-gray-300" />
+                    <div className="text-center">
+                      <p className="text-lg font-medium">No files open</p>
+                      <p className="text-sm text-gray-500">
+                        Select a file from the sidebar to start editing
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </>
             )}
           </div>
         </SidebarInset>
