@@ -61,9 +61,6 @@ export const useAISuggestions = (): UseAISuggestionsReturn => {
 
             (async () => {
                 try {
-                    // NOTE: Code completion API is not implemented yet.
-                    // Commenting out the API call to avoid 404 console errors.
-                    /*
                     const payload = {
                         fileContent: model.getValue(),
                         cursorLine: cursorPosition.lineNumber - 1,
@@ -98,7 +95,6 @@ export const useAISuggestions = (): UseAISuggestionsReturn => {
                         console.warn("No suggestion received from API.");
                         setState((prev) => ({ ...prev, isLoading: false }));
                     }
-                    */
                     setState((prev) => ({ ...prev, isLoading: false }));
                 } catch (error) {
                     console.error("Error fetching code suggestion:", error);
