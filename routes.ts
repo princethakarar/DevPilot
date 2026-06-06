@@ -5,7 +5,7 @@
  */
 
 export const publicRoutes: string[] = [
-   
+    "/",
 ]
 
 /**
@@ -15,7 +15,6 @@ export const publicRoutes: string[] = [
  */
 
 export const protectedRoutes: string[] = [
-    "/",
     
 ]
 
