@@ -16,6 +16,7 @@ interface PlaygroundEditorProps {
   onAcceptSuggestion: (editor: any, monaco: any) => void
   onRejectSuggestion: (editor: any) => void
   onTriggerSuggestion: (type: string, editor: any) => void
+  highlightCurrentLine: boolean
 }
 
 export const PlaygroundEditor = ({
@@ -28,6 +29,7 @@ export const PlaygroundEditor = ({
   onAcceptSuggestion,
   onRejectSuggestion,
   onTriggerSuggestion,
+  highlightCurrentLine,
 }: PlaygroundEditorProps) => {
   const editorRef = useRef<any>(null)
   const monacoRef = useRef<Monaco | null>(null)
@@ -322,6 +324,7 @@ export const PlaygroundEditor = ({
 
     editor.updateOptions({
       ...defaultEditorOptions,
+      renderLineHighlight: highlightCurrentLine ? "all" : "none",
       // Enable inline suggestions but with specific settings to prevent conflicts
       inlineSuggest: {
         enabled: true,
@@ -517,6 +520,14 @@ export const PlaygroundEditor = ({
     updateEditorLanguage()
   }, [activeFile])
 
+  useEffect(() => {
+    if (editorRef.current) {
+      editorRef.current.updateOptions({
+        renderLineHighlight: highlightCurrentLine ? "all" : "none",
+      })
+    }
+  }, [highlightCurrentLine])
+
   // Cleanup on unmount
   useEffect(() => {
     isMountedRef.current = true
@@ -566,6 +577,7 @@ export const PlaygroundEditor = ({
         value={content}
         onChange={(value) => onContentChange(value || "")}
         onMount={handleEditorDidMount}
+        theme="modern-dark"
         language={activeFile ? getEditorLanguage(activeFile.fileExtension || "") : "plaintext"}
         // @ts-ignore
         options={defaultEditorOptions}

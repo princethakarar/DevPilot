@@ -20,6 +20,7 @@ import {
   Database,
   FlameIcon,
 } from "lucide-react"
+import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import {
   Sidebar,
@@ -63,61 +64,76 @@ export function DashboardSidebar({ initialPlaygroundData }: { initialPlaygroundD
   const recentPlaygrounds = useMemo(() => initialPlaygroundData, [initialPlaygroundData])
 
   return (
-    <Sidebar variant="inset" collapsible="icon" className="border border-r">
-      <SidebarHeader>
+    <Sidebar variant="inset" collapsible="icon" className="border-r border-[rgba(0,212,255,0.08)] bg-[#020B1F] shadow-[5px_0_25px_rgba(0,0,0,0.3)]">
+      <SidebarHeader className="border-b border-[rgba(0,212,255,0.08)] bg-[rgba(7,20,40,0.4)] backdrop-blur-md">
         <div className="flex items-center gap-2 px-4 py-3 justify-center">
           <Image src={"/logo.svg"} alt="logo" height={60} width={60} />
         </div>
-       
       </SidebarHeader>
-      <SidebarContent>
+      <SidebarContent className="bg-transparent py-4 px-3">
         <SidebarGroup>
-          <SidebarMenu>
+          <SidebarMenu className="space-y-1.5">
             <SidebarMenuItem>
-              <SidebarMenuButton asChild isActive={pathname === "/"} tooltip="Home">
+              <SidebarMenuButton 
+                asChild 
+                isActive={pathname === "/"} 
+                tooltip="Home"
+                className={cn(
+                  "w-full flex items-center px-3 py-2 text-sm rounded-xl transition-all duration-300 cursor-pointer font-jetbrains border border-transparent text-[#7ca8cc] hover:text-white hover:bg-[#00D4FF]/5 hover:shadow-[inset_0_0_8px_rgba(0,212,255,0.05)]",
+                  pathname === "/" && "bg-gradient-to-r from-[rgba(0,212,255,0.12)] to-[rgba(139,92,246,0.12)] text-[#00D4FF] border-[rgba(0,212,255,0.25)] shadow-[0_0_15px_rgba(0,212,255,0.08)]"
+                )}
+              >
                 <Link href="/">
-                  <Home className="h-4 w-4" />
+                  <Home className="h-4 w-4 shrink-0 text-[#00D4FF]" />
                   <span>Home</span>
                 </Link>
               </SidebarMenuButton>
             </SidebarMenuItem>
             <SidebarMenuItem>
-              <SidebarMenuButton asChild isActive={pathname === "/dashboard"} tooltip="Dashboard">
+              <SidebarMenuButton 
+                asChild 
+                isActive={pathname === "/dashboard"} 
+                tooltip="Dashboard"
+                className={cn(
+                  "w-full flex items-center px-3 py-2 text-sm rounded-xl transition-all duration-300 cursor-pointer font-jetbrains border border-transparent text-[#7ca8cc] hover:text-white hover:bg-[#8B5CF6]/5 hover:shadow-[inset_0_0_8px_rgba(139,92,246,0.05)]",
+                  pathname === "/dashboard" && "bg-gradient-to-r from-[rgba(0,212,255,0.12)] to-[rgba(139,92,246,0.12)] text-[#00D4FF] border-[rgba(0,212,255,0.25)] shadow-[0_0_15px_rgba(0,212,255,0.08)]"
+                )}
+              >
                 <Link href="/dashboard">
-                  <LayoutDashboard className="h-4 w-4" />
+                  <LayoutDashboard className="h-4 w-4 shrink-0 text-[#8B5CF6]" />
                   <span>Dashboard</span>
                 </Link>
               </SidebarMenuButton>
             </SidebarMenuItem>
-          
           </SidebarMenu>
         </SidebarGroup>
 
-        <SidebarGroup>
-          <SidebarGroupLabel>
-            <Star className="h-4 w-4 mr-2" />
+        <SidebarGroup className="mt-4">
+          <SidebarGroupLabel className="text-xs font-semibold font-jetbrains uppercase tracking-widest text-[#3a6080] px-3">
+            <Star className="h-3.5 w-3.5 mr-2 text-amber-400" />
             Starred
           </SidebarGroupLabel>
-          <SidebarGroupAction title="Add starred playground">
-            <Plus className="h-4 w-4" />
-          </SidebarGroupAction>
-          <SidebarGroupContent>
-            <SidebarMenu>
-
+          <SidebarGroupContent className="mt-1.5">
+            <SidebarMenu className="space-y-1.5">
               {starredPlaygrounds.length === 0 && recentPlaygrounds.length === 0 ? (
-                <div className="text-center text-muted-foreground py-4 w-full">Create your playground</div>
+                <div className="text-center text-xs font-jetbrains text-[#3a6080] py-4 w-full">Create your playground</div>
               ) : (
                 starredPlaygrounds.map((playground) => {
                   const IconComponent = lucideIconMap[playground.icon] || Code2;
+                  const isActive = pathname === `/playground/${playground.id}`;
                   return (
                     <SidebarMenuItem key={playground.id}>
                       <SidebarMenuButton
                         asChild
-                        isActive={pathname === `/playground/${playground.id}`}
+                        isActive={isActive}
                         tooltip={playground.name}
+                        className={cn(
+                          "w-full flex items-center px-3 py-2 text-sm rounded-xl transition-all duration-300 cursor-pointer font-jetbrains border border-transparent text-[#7ca8cc] hover:text-white hover:bg-[#00D4FF]/5 hover:shadow-[inset_0_0_8px_rgba(0,212,255,0.05)]",
+                          isActive && "bg-gradient-to-r from-[rgba(0,212,255,0.12)] to-[rgba(139,92,246,0.12)] text-[#00D4FF] border-[rgba(0,212,255,0.25)] shadow-[0_0_15px_rgba(0,212,255,0.08)]"
+                        )}
                       >
                         <Link href={`/playground/${playground.id}`}>
-                          {IconComponent && <IconComponent className="h-4 w-4" />}
+                          {IconComponent && <IconComponent className="h-4 w-4 shrink-0" />}
                           <span>{playground.name}</span>
                         </Link>
                       </SidebarMenuButton>
@@ -129,28 +145,30 @@ export function DashboardSidebar({ initialPlaygroundData }: { initialPlaygroundD
           </SidebarGroupContent>
         </SidebarGroup>
 
-        <SidebarGroup>
-          <SidebarGroupLabel>
-            <History className="h-4 w-4 mr-2" />
+        <SidebarGroup className="mt-4">
+          <SidebarGroupLabel className="text-xs font-semibold font-jetbrains uppercase tracking-widest text-[#3a6080] px-3">
+            <History className="h-3.5 w-3.5 mr-2 text-[#00D4FF]" />
             Recent
           </SidebarGroupLabel>
-          <SidebarGroupAction title="Create new playground">
-            <FolderPlus className="h-4 w-4" />
-          </SidebarGroupAction>
-          <SidebarGroupContent>
-            <SidebarMenu>
+          <SidebarGroupContent className="mt-1.5">
+            <SidebarMenu className="space-y-1.5">
               {starredPlaygrounds.length === 0 && recentPlaygrounds.length === 0 ? null : (
                 recentPlaygrounds.map((playground) => {
                   const IconComponent = lucideIconMap[playground.icon] || Code2;
+                  const isActive = pathname === `/playground/${playground.id}`;
                   return (
                     <SidebarMenuItem key={playground.id}>
                       <SidebarMenuButton
                         asChild
-                        isActive={pathname === `playground/${playground.id}`}
+                        isActive={isActive}
                         tooltip={playground.name}
+                        className={cn(
+                          "w-full flex items-center px-3 py-2 text-sm rounded-xl transition-all duration-300 cursor-pointer font-jetbrains border border-transparent text-[#7ca8cc] hover:text-white hover:bg-[#00D4FF]/5 hover:shadow-[inset_0_0_8px_rgba(0,212,255,0.05)]",
+                          isActive && "bg-gradient-to-r from-[rgba(0,212,255,0.12)] to-[rgba(139,92,246,0.12)] text-[#00D4FF] border-[rgba(0,212,255,0.25)] shadow-[0_0_15px_rgba(0,212,255,0.08)]"
+                        )}
                       >
                         <Link href={`/playground/${playground.id}`}>
-                          {IconComponent && <IconComponent className="h-4 w-4" />}
+                          {IconComponent && <IconComponent className="h-4 w-4 shrink-0" />}
                           <span>{playground.name}</span>
                         </Link>
                       </SidebarMenuButton>
@@ -159,9 +177,13 @@ export function DashboardSidebar({ initialPlaygroundData }: { initialPlaygroundD
                 })
               )}
               <SidebarMenuItem>
-                <SidebarMenuButton asChild tooltip="View all">
+                <SidebarMenuButton 
+                  asChild 
+                  tooltip="View all"
+                  className="w-full flex items-center px-3 py-2 text-sm rounded-xl transition-all duration-300 cursor-pointer font-jetbrains border border-transparent text-[#3a6080] hover:text-[#00D4FF] hover:bg-[#00D4FF]/5"
+                >
                   <Link href="/playgrounds">
-                    <span className="text-sm text-muted-foreground">View all playgrounds</span>
+                    <span>View all playgrounds</span>
                   </Link>
                 </SidebarMenuButton>
               </SidebarMenuItem>
@@ -169,12 +191,16 @@ export function DashboardSidebar({ initialPlaygroundData }: { initialPlaygroundD
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>
-      <SidebarFooter>
+      <SidebarFooter className="border-t border-[rgba(0,212,255,0.08)] bg-[rgba(7,20,40,0.4)] px-3 py-2">
         <SidebarMenu>
           <SidebarMenuItem>
-            <SidebarMenuButton asChild tooltip="Settings">
+            <SidebarMenuButton 
+              asChild 
+              tooltip="Settings"
+              className="w-full flex items-center px-3 py-2 text-sm rounded-xl transition-all duration-300 cursor-pointer font-jetbrains border border-transparent text-[#7ca8cc] hover:text-white hover:bg-[#00D4FF]/5"
+            >
               <Link href="/settings">
-                <Settings className="h-4 w-4" />
+                <Settings className="h-4 w-4 shrink-0 text-[#7ca8cc]" />
                 <span>Settings</span>
               </Link>
             </SidebarMenuButton>

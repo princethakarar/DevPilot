@@ -249,12 +249,12 @@ const WebContainerPreview = ({
 
   if (isLoading) {
     return (
-      <div className="h-full flex items-center justify-center">
-        <div className="text-center space-y-4 max-w-md p-6 rounded-lg bg-gray-50 dark:bg-gray-900">
-          <Loader2 className="h-10 w-10 animate-spin text-primary mx-auto" />
-          <h3 className="text-lg font-medium">Initializing WebContainer</h3>
-          <p className="text-sm text-gray-500 dark:text-gray-400">
-            Setting up the environment for your project...
+      <div className="h-full flex items-center justify-center bg-[#020B1F]">
+        <div className="text-center space-y-4 max-w-sm p-8 rounded-2xl border border-[rgba(0,212,255,0.15)] bg-[#071428]/80 shadow-[0_0_30px_rgba(0,212,255,0.08)] backdrop-blur-md">
+          <Loader2 className="h-8 w-8 animate-spin text-[#00D4FF] drop-shadow-[0_0_6px_rgba(0,212,255,0.5)] mx-auto" />
+          <h3 className="text-sm font-bold font-jetbrains text-white uppercase tracking-wider">Initializing Env</h3>
+          <p className="text-xs text-[#7ca8cc] font-jetbrains leading-relaxed">
+            Spawning micro-container and allocating runtime resources...
           </p>
         </div>
       </div>
@@ -263,24 +263,27 @@ const WebContainerPreview = ({
 
   if (error || setupError) {
     return (
-      <div className="h-full flex items-center justify-center">
-        <div className="bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 p-6 rounded-lg max-w-md">
-          <div className="flex items-center gap-2 mb-3">
+      <div className="h-full flex items-center justify-center bg-[#020B1F]">
+        <div className="bg-rose-500/10 border border-rose-500/25 p-6 rounded-2xl max-w-md shadow-[0_0_20px_rgba(244,63,94,0.05)]">
+          <div className="flex items-center gap-2 mb-3 text-rose-400 font-jetbrains">
             <XCircle className="h-5 w-5" />
-            <h3 className="font-semibold">Error</h3>
+            <h3 className="font-bold text-xs uppercase tracking-wider">Initialization Error</h3>
           </div>
-          <p className="text-sm">{error || setupError}</p>
+          <p className="text-xs font-jetbrains text-[#e8f4ff] bg-black/30 p-3 rounded-lg overflow-x-auto border border-rose-500/10">
+            {error || setupError}
+          </p>
         </div>
       </div>
     );
   }
+
   const getStepIcon = (stepIndex: number) => {
     if (stepIndex < currentStep) {
-      return <CheckCircle className="h-5 w-5 text-green-500" />;
+      return <CheckCircle className="h-4 w-4 text-green-400 drop-shadow-[0_0_4px_rgba(74,222,128,0.4)]" />;
     } else if (stepIndex === currentStep) {
-      return <Loader2 className="h-5 w-5 animate-spin text-blue-500" />;
+      return <Loader2 className="h-4 w-4 animate-spin text-[#00D4FF] drop-shadow-[0_0_4px_rgba(0,212,255,0.4)]" />;
     } else {
-      return <div className="h-5 w-5 rounded-full border-2 border-gray-300" />;
+      return <div className="h-4 w-4 rounded-full border border-[rgba(0,212,255,0.2)]" />;
     }
   };
 
@@ -290,12 +293,12 @@ const WebContainerPreview = ({
 
     return (
       <span
-        className={`text-sm font-medium ${
+        className={`text-xs font-semibold font-jetbrains ${
           isComplete
-            ? "text-green-600"
+            ? "text-green-400"
             : isActive
-            ? "text-blue-600"
-            : "text-gray-500"
+            ? "text-[#00D4FF] animate-pulse"
+            : "text-[#3a6080]"
         }`}
       >
         {label}
@@ -304,16 +307,23 @@ const WebContainerPreview = ({
   };
 
   return (
-    <div className="h-full w-full flex flex-col">
+    <div className="h-full w-full flex flex-col bg-[#020B1F]/60 backdrop-blur-md">
       {!previewUrl ? (
-        <div className="h-full flex flex-col">
-          <div className="w-full max-w-md p-6 m-5 rounded-lg bg-white dark:bg-zinc-800 shadow-sm mx-auto">
-            <Progress
-              value={(currentStep / totalSteps) * 100}
-              className="h-2 mb-6"
-            />
+        <div className="h-full flex flex-col p-6 space-y-6">
+          <div className="w-full max-w-md p-6 rounded-2xl bg-[#071428]/80 border border-[rgba(0,212,255,0.15)] shadow-[0_0_30px_rgba(0,212,255,0.08)] mx-auto space-y-6">
+            <div className="flex items-center justify-between">
+              <h3 className="text-xs font-bold font-jetbrains text-white uppercase tracking-wider">WebContainer Env</h3>
+              <span className="text-xs font-semibold font-jetbrains text-[#00D4FF]">{Math.round((currentStep / totalSteps) * 100)}%</span>
+            </div>
+            
+            <div className="relative w-full h-1.5 bg-[#020B1F] rounded-full overflow-hidden border border-[rgba(0,212,255,0.1)]">
+              <div 
+                className="h-full bg-gradient-to-r from-[#00D4FF] via-[#3B82F6] to-[#8B5CF6] transition-all duration-500 rounded-full"
+                style={{ width: `${(currentStep / totalSteps) * 100}%` }}
+              />
+            </div>
 
-            <div className="space-y-4 mb-6">
+            <div className="space-y-3.5">
               <div className="flex items-center gap-3">
                 {getStepIcon(1)}
                 {getStepText(1, "Transforming template data")}
@@ -334,18 +344,18 @@ const WebContainerPreview = ({
           </div>
 
           {/* Terminal */}
-          <div className="flex-1 p-4">
+          <div className="flex-1 p-1 rounded-2xl border border-[rgba(0,212,255,0.08)] bg-[#020B1F]/40 overflow-hidden shadow-2xl">
             <TerminalComponent
               ref={terminalRef}
               webContainerInstance={instance}
               theme="dark"
-              className="h-full"
+              className="h-full rounded-2xl"
             />
           </div>
         </div>
       ) : (
         <div className="h-full flex flex-col">
-          <div className="flex-1">
+          <div className="flex-1 relative bg-white">
             <iframe
               src={previewUrl}
               className="w-full h-full border-none"
@@ -353,12 +363,16 @@ const WebContainerPreview = ({
             />
           </div>
 
-          <div className="h-64 border-t">
+          <div className="h-64 border-t border-[rgba(0,212,255,0.1)] bg-[#020B1F]/80 p-2 relative">
+            <div className="absolute top-2.5 right-4 z-10 flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse shadow-[0_0_8px_rgba(34,197,94,0.8)]" />
+              <span className="text-[9px] font-bold text-[#7ca8cc] font-jetbrains uppercase tracking-widest">WebContainer Terminal</span>
+            </div>
             <TerminalComponent
               ref={terminalRef}
               webContainerInstance={instance}
               theme="dark"
-              className="h-full"
+              className="h-full rounded-xl overflow-hidden"
             />
           </div>
         </div>

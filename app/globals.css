@@ -7,9 +7,9 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-sans);
-  --font-mono: var(--font-geist-mono);
-  --font-heading: var(--font-sans);
+  --font-sans: var(--font-montserrat), var(--font-geist-sans), sans-serif;
+  --font-mono: var(--font-jetbrains), var(--font-geist-mono), monospace;
+  --font-heading: var(--font-montserrat), sans-serif;
   --font-oxanium: var(--font-oxanium), sans-serif;
   --font-jetbrains: var(--font-jetbrains), monospace;
   --font-montserrat: var(--font-montserrat), sans-serif;
@@ -110,19 +110,21 @@
   --chart-3: oklch(0.439 0 0);
   --chart-4: oklch(0.371 0 0);
   --chart-5: oklch(0.269 0 0);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+  --sidebar: #020B1F;
+  --sidebar-foreground: #e8f4ff;
+  --sidebar-primary: #00D4FF;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: rgba(0, 212, 255, 0.08);
+  --sidebar-accent-foreground: #00D4FF;
+  --sidebar-border: rgba(0, 212, 255, 0.08);
+  --sidebar-ring: rgba(0, 212, 255, 0.3);
 }
 
 @layer base {
   * {
     @apply border-border outline-ring/50;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(0, 180, 255, 0.2) #050d1a;
   }
   body {
     @apply bg-background text-foreground;
@@ -130,6 +132,26 @@
   html {
     @apply font-sans;
   }
+}
+
+/* Global scrollbar styling */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #050d1a;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(0, 180, 255, 0.2);
+  border-radius: 9999px;
+  border: 1px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 180, 255, 0.4);
+  border: 1px solid transparent;
+  background-clip: padding-box;
 }
 
 /* Playground tab custom hover effects */
@@ -179,8 +201,8 @@
   66% { transform: translateY(10px) translateX(-6px); }
 }
 @keyframes landing-marqueeScroll {
-  0% { transform: translateX(0); }
-  100% { transform: translateX(-50%); }
+  0% { transform: translate3d(0, 0, 0); }
+  100% { transform: translate3d(-50%, 0, 0); }
 }
 @keyframes landing-dividerShift {
   0% { background-position: 0% 0; }

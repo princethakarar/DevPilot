@@ -4,6 +4,7 @@ import NextAuth , {type DefaultSession} from "next-auth"
 
 export type ExtendedUser = DefaultSession["user"] & {
     role:UserRole
+    createdAt?: string | Date
 }
 
 declare module "next-auth"{

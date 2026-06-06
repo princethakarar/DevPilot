@@ -85,6 +85,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       token.name = existingUser.name;
       token.email = existingUser.email;
       token.role = existingUser.role;
+      token.createdAt = existingUser.createdAt;
 
       return token;
     },
@@ -97,6 +98,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
 
     if(token.sub && session.user){
       session.user.role = token.role
+      session.user.createdAt = token.createdAt as any
     }
 
     return session;

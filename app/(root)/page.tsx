@@ -91,6 +91,7 @@ export default function Home() {
             <div className="animate-[landing-fadeUp_0.7s_0.8s_both]">
               <Link href="/dashboard" className="no-underline cursor-none">
                 <button 
+                  suppressHydrationWarning
                   className="font-oxanium bg-gradient-to-r from-[#2563EB] to-[#8B5CF6] text-white px-10 py-4 text-sm font-bold tracking-[0.1em] uppercase cursor-none transition-all duration-300 hover:scale-[1.03] rounded-[16px] outline-none"
                   style={{
                     boxShadow: '0 0 40px rgba(99,102,241,0.35)',

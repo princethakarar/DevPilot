@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Geist, Geist_Mono, Oxanium, JetBrains_Mono, Montserrat } from "next/font/google";
 import { SessionProvider } from "next-auth/react";
 import { auth } from "@/auth";
 import "./globals.css";
@@ -15,6 +15,24 @@ const geistSans = Geist({
 const geistMono = Geist_Mono({
   variable: "--font-geist-mono",
   subsets: ["latin"],
+});
+
+const oxanium = Oxanium({
+  subsets: ['latin'],
+  weight: ['300', '400', '500', '600', '700', '800'],
+  variable: '--font-oxanium',
+});
+
+const jetbrainsMono = JetBrains_Mono({
+  subsets: ['latin'],
+  weight: ['300', '400', '500'],
+  variable: '--font-jetbrains',
+});
+
+const montserrat = Montserrat({
+  subsets: ['latin'],
+  weight: ['400', '500', '600', '700', '800', '900'],
+  variable: '--font-montserrat',
 });
 
 export const metadata: Metadata = {
@@ -37,7 +55,7 @@ export default async function RootLayout({
     <html
       suppressHydrationWarning
       lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased ${themeClass}`}
+      className={`${geistSans.variable} ${geistMono.variable} ${oxanium.variable} ${jetbrainsMono.variable} ${montserrat.variable} h-full antialiased ${themeClass}`}
       style={{ colorScheme }}
     >
       <body className="min-h-full flex flex-col">

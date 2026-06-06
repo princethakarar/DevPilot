@@ -1,9 +1,16 @@
 "use client";
 
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState } from "react";
+
+interface ChatMessage {
+  id: string;
+  sender: "user" | "ai";
+  text: string;
+  timestamp: string;
+}
 
 const AI_RESPONSES: Record<string, string> = {
-  default: `Sure! Here's a rate limiter in TypeScript:
+  default: `Sure! Here's a rate limiter middleware in TypeScript:
 
 \`\`\`ts
 import { Request, Response, NextFunction } from 'express';
@@ -31,9 +38,12 @@ export default rateLimiter;
 \`\`\`
 
 Usage: \`app.use(rateLimiter(100, 60000))\``,
+
   explain: `This code uses a sliding window algorithm. For each IP, it stores an array of timestamps and filters out those older than the window — giving a "rolling" 60-second limit rather than a fixed-interval one.`,
+
   test: `Here are Jest tests for the rate limiter:
 
+\`\`\`ts
 test('allows under limit', async () => {
   const res = await request(app).get('/');
   expect(res.status).not.toBe(429);
@@ -44,145 +54,283 @@ test('blocks over limit', async () => {
     await request(app).get('/');
   const res = await request(app).get('/');
   expect(res.status).toBe(429);
-});`,
+});
+\`\`\``,
 };
-
-function typeText(el: HTMLElement, text: string, speed: number, onDone?: () => void) {
-  el.textContent = "";
-  let i = 0;
-  const tick = () => {
-    if (i < text.length) {
-      el.textContent += text[i++];
-      el.closest(".chat-body-scroll")?.scrollTo(0, 99999);
-      setTimeout(tick, speed);
-    } else {
-      onDone?.();
-    }
-  };
-  tick();
-}
 
 export default function ChatDemo() {
   const bodyRef = useRef<HTMLDivElement>(null);
-  const bubbleRef = useRef<HTMLDivElement>(null);
-  const statusRef = useRef<HTMLSpanElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
-  const [started, setStarted] = useState(false);
 
-  const startTyping = useCallback(() => {
-    if (started) return;
-    setStarted(true);
-    setTimeout(() => {
-      if (bubbleRef.current && statusRef.current) {
-        typeText(bubbleRef.current, AI_RESPONSES.default, 8, () => {
-          if (statusRef.current) statusRef.current.textContent = "just now";
-        });
-      }
-    }, 600);
-  }, [started]);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [inputText, setInputText] = useState("");
+  const [isThinking, setIsThinking] = useState(false);
+  const [typingText, setTypingText] = useState("");
+  const [isAutoplay, setIsAutoplay] = useState(true);
+  const [isFading, setIsFading] = useState(false);
 
-  // Auto-start when visible
+  // Auto scroll to bottom
   useEffect(() => {
-    const el = bodyRef.current?.closest("section");
-    if (!el) return;
-    const obs = new IntersectionObserver(
-      (entries) => {
-        if (entries[0].isIntersecting) {
-          startTyping();
-          obs.disconnect();
-        }
-      },
-      { threshold: 0.3 }
-    );
-    obs.observe(el);
-    return () => obs.disconnect();
-  }, [startTyping]);
+    if (bodyRef.current) {
+      bodyRef.current.scrollTop = bodyRef.current.scrollHeight;
+    }
+  }, [messages, typingText, isThinking]);
 
-  const sendMessage = () => {
-    const val = inputRef.current?.value.trim();
-    if (!val || !bodyRef.current) return;
-    inputRef.current!.value = "";
+  // Autoplay scenario loop
+  useEffect(() => {
+    if (!isAutoplay) return;
 
-    // User message
-    const userDiv = document.createElement("div");
-    userDiv.className = "flex justify-end gap-2.5";
-    userDiv.innerHTML = `<div><div class="font-jetbrains px-3.5 py-2.5 rounded-[10px] text-[12.5px] leading-relaxed max-w-[82%] bg-[rgba(0,90,160,0.35)] border border-[rgba(0,180,255,0.2)] text-[#e8f4ff]">${val}</div><div class="font-jetbrains text-[10px] text-[#3a6080] mt-1 text-right">You · just now</div></div>`;
-    bodyRef.current.appendChild(userDiv);
-    bodyRef.current.scrollTop = 99999;
+    let active = true;
+    let timer: NodeJS.Timeout | null = null;
 
-    // AI response
-    const aiDiv = document.createElement("div");
-    aiDiv.className = "flex gap-2.5";
-    const bubble = document.createElement("div");
-    bubble.className = "font-jetbrains px-3.5 py-2.5 rounded-[10px] text-[12.5px] leading-relaxed max-w-[82%] bg-[rgba(30,10,50,0.5)] border border-[rgba(166,123,212,0.2)] text-[#e8f4ff] whitespace-pre-wrap";
-    const meta = document.createElement("div");
-    meta.className = "font-jetbrains text-[10px] text-[#3a6080] mt-1";
-    meta.textContent = "DevPilot · thinking...";
+    const delay = (ms: number) => new Promise<void>((r) => { timer = setTimeout(r, ms); });
 
-    aiDiv.innerHTML = `<div class="w-7 h-7 shrink-0 rounded-full bg-[rgba(0,180,255,0.1)] border border-[rgba(0,180,255,0.2)] flex items-center justify-center mt-0.5"><svg width="16" height="16" viewBox="0 0 80 80" fill="none"><defs><linearGradient id="cg2" x1="0" y1="0" x2="80" y2="80" gradientUnits="userSpaceOnUse"><stop stop-color="#00d4ff"/><stop offset="1" stop-color="#a67bd4"/></linearGradient></defs><polygon points="40,4 72,60 8,60" fill="url(#cg2)"/><circle cx="40" cy="38" r="9" fill="#fff" opacity="0.9"/><circle cx="40" cy="38" r="4.5" fill="url(#cg2)"/></svg></div>`;
-    const wrap = document.createElement("div");
-    wrap.appendChild(bubble);
-    wrap.appendChild(meta);
-    aiDiv.appendChild(wrap);
-    bodyRef.current.appendChild(aiDiv);
-    bodyRef.current.scrollTop = 99999;
+    const simulateTypeInput = async (text: string) => {
+      setInputText("");
+      for (let i = 0; i < text.length; i++) {
+        if (!active || !isAutoplay) return;
+        setInputText((prev) => prev + text[i]);
+        await delay(40 + Math.random() * 30);
+      }
+      await delay(800);
+    };
 
-    const lv = val.toLowerCase();
-    let resp: string;
-    if (lv.includes("explain") || lv.includes("how")) resp = AI_RESPONSES.explain;
-    else if (lv.includes("test")) resp = AI_RESPONSES.test;
-    else resp = `Got it! Analysing your request: "${val}"...\n\nI'll process your codebase context and generate the best solution. This feature is powered by full-repo awareness.`;
+    const simulateTypeAi = async (text: string) => {
+      setTypingText("");
+      for (let i = 0; i < text.length; i++) {
+        if (!active || !isAutoplay) return;
+        setTypingText((prev) => prev + text[i]);
+        await delay(12);
+      }
+      setTypingText("");
+    };
 
+    const runLoop = async () => {
+      // initial brief delay on mount
+      await delay(1000);
+
+      while (active && isAutoplay) {
+        // Step 1: Type user prompt 1
+        await simulateTypeInput("Write a rate limiter middleware in TypeScript");
+        if (!active || !isAutoplay) return;
+        setInputText("");
+        setMessages((prev) => [...prev, { id: "u1", sender: "user", text: "Write a rate limiter middleware in TypeScript", timestamp: "just now" }]);
+
+        // Step 2: Thinking
+        setIsThinking(true);
+        await delay(1200);
+        setIsThinking(false);
+
+        // Step 3: Type AI response 1
+        if (!active || !isAutoplay) return;
+        await simulateTypeAi(AI_RESPONSES.default);
+        if (!active || !isAutoplay) return;
+        setMessages((prev) => [...prev, { id: "a1", sender: "ai", text: AI_RESPONSES.default, timestamp: "just now" }]);
+
+        // Pause
+        await delay(3500);
+
+        // Step 4: Type user prompt 2
+        if (!active || !isAutoplay) return;
+        await simulateTypeInput("Explain how it works");
+        if (!active || !isAutoplay) return;
+        setInputText("");
+        setMessages((prev) => [...prev, { id: "u2", sender: "user", text: "Explain how it works", timestamp: "just now" }]);
+
+        // Step 5: Thinking
+        setIsThinking(true);
+        await delay(1000);
+        setIsThinking(false);
+
+        // Step 6: Type AI response 2
+        if (!active || !isAutoplay) return;
+        await simulateTypeAi(AI_RESPONSES.explain);
+        if (!active || !isAutoplay) return;
+        setMessages((prev) => [...prev, { id: "a2", sender: "ai", text: AI_RESPONSES.explain, timestamp: "just now" }]);
+
+        // Pause
+        await delay(3500);
+
+        // Step 7: Type user prompt 3
+        if (!active || !isAutoplay) return;
+        await simulateTypeInput("Write a unit test for this");
+        if (!active || !isAutoplay) return;
+        setInputText("");
+        setMessages((prev) => [...prev, { id: "u3", sender: "user", text: "Write a unit test for this", timestamp: "just now" }]);
+
+        // Step 8: Thinking
+        setIsThinking(true);
+        await delay(1000);
+        setIsThinking(false);
+
+        // Step 9: Type AI response 3
+        if (!active || !isAutoplay) return;
+        await simulateTypeAi(AI_RESPONSES.test);
+        if (!active || !isAutoplay) return;
+        setMessages((prev) => [...prev, { id: "a3", sender: "ai", text: AI_RESPONSES.test, timestamp: "just now" }]);
+
+        // Long pause before resetting loop
+        await delay(8000);
+
+        // Reset with a clean fade animation
+        if (!active || !isAutoplay) return;
+        setIsFading(true);
+        await delay(800);
+        setMessages([]);
+        setIsFading(false);
+        await delay(500);
+      }
+    };
+
+    runLoop();
+
+    return () => {
+      active = false;
+      if (timer) clearTimeout(timer);
+    };
+  }, [isAutoplay]);
+
+  const handleUserType = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setIsAutoplay(false);
+    setInputText(e.target.value);
+  };
+
+  const handleUserSubmit = () => {
+    if (!inputText.trim()) return;
+    setIsAutoplay(false);
+    const userMsg = inputText.trim();
+    setInputText("");
+
+    setMessages((prev) => [...prev, { id: `u-manual-${Date.now()}`, sender: "user", text: userMsg, timestamp: "just now" }]);
+
+    setIsThinking(true);
     setTimeout(() => {
-      typeText(bubble, resp, 10, () => { meta.textContent = "DevPilot · just now"; });
-    }, 700);
+      setIsThinking(false);
+
+      const lv = userMsg.toLowerCase();
+      let respText = "";
+      if (lv.includes("explain") || lv.includes("how")) {
+        respText = AI_RESPONSES.explain;
+      } else if (lv.includes("test")) {
+        respText = AI_RESPONSES.test;
+      } else {
+        respText = `Got it! Analyzing "${userMsg}"...\n\nI've searched your codebase and mapped relevant contexts. Let me know if you want me to write code or test files for this.`;
+      }
+
+      let currentTypeIndex = 0;
+      const typeInterval = setInterval(() => {
+        setTypingText((prev) => prev + respText[currentTypeIndex]);
+        currentTypeIndex++;
+        if (currentTypeIndex >= respText.length) {
+          clearInterval(typeInterval);
+          setMessages((prev) => [...prev, { id: `a-manual-${Date.now()}`, sender: "ai", text: respText, timestamp: "just now" }]);
+          setTypingText("");
+        }
+      }, 12);
+    }, 1000);
   };
 
   return (
-    <div className="bg-[#06101e] border border-[rgba(0,180,255,0.18)] rounded-[14px] overflow-hidden shadow-[0_24px_80px_rgba(0,0,0,0.6)] flex flex-col">
+    <div className="bg-[#06101e] border border-[rgba(0,180,255,0.18)] rounded-[14px] overflow-hidden shadow-[0_24px_80px_rgba(0,0,0,0.6)] flex flex-col h-[400px]">
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3.5 bg-[rgba(0,0,0,0.3)] border-b border-[rgba(255,255,255,0.05)]">
         <div className="flex items-center gap-2">
           <div className="w-2 h-2 rounded-full bg-[#00b4ff] shadow-[0_0_8px_#00b4ff] animate-[landing-pulse_2s_infinite]" />
           <span className="font-jetbrains text-[11px] text-[#7ca8cc] tracking-[0.12em]">DEVPILOT AI</span>
         </div>
-        <span className="font-jetbrains text-[10px] text-[#3a6080]">claude-3.5 · gpt-4o</span>
+        <span className="font-jetbrains text-[10px] text-[#3a6080]">llama-3.3-70b-versatile</span>
       </div>
+
       {/* Body */}
-      <div ref={bodyRef} className="chat-body-scroll px-4 py-5 flex flex-col gap-4 min-h-[280px] max-h-[340px] overflow-y-auto [&::-webkit-scrollbar]:w-[3px] [&::-webkit-scrollbar-thumb]:bg-[#1a5faa]">
-        <div className="flex justify-end gap-2.5">
-          <div>
-            <div className="font-jetbrains px-3.5 py-2.5 rounded-[10px] text-[12.5px] leading-relaxed max-w-[82%] bg-[rgba(0,90,160,0.35)] border border-[rgba(0,180,255,0.2)] text-[#e8f4ff]">
-              Write a rate limiter middleware in TypeScript
+      <div 
+        ref={bodyRef} 
+        className="chat-body-scroll px-4 py-5 flex-1 flex flex-col gap-4 overflow-hidden transition-opacity duration-500"
+        style={{ opacity: isFading ? 0 : 1 }}
+      >
+        {messages.length === 0 && !typingText && !isThinking && (
+          <div className="flex-1 flex items-center justify-center">
+            <span className="font-jetbrains text-[11px] text-[#3a6080] italic">Ask anything to begin pair programming...</span>
+          </div>
+        )}
+
+        {messages.map((m) => (
+          <div key={m.id} className={`flex ${m.sender === "user" ? "justify-end" : "justify-start"} gap-2.5`}>
+            {m.sender === "ai" && (
+              <div className="w-7 h-7 shrink-0 rounded-full bg-[rgba(0,180,255,0.1)] border border-[rgba(0,180,255,0.2)] flex items-center justify-center mt-0.5">
+                <img src="/icon-remove-bg.png" alt="DevPilot" className="w-4 h-4 object-contain" />
+              </div>
+            )}
+            <div className={m.sender === "user" ? "max-w-[85%]" : "max-w-[85%] flex-1"}>
+              <div 
+                className={`font-jetbrains px-3.5 py-2.5 rounded-[10px] text-[12px] leading-relaxed whitespace-pre-wrap ${
+                  m.sender === "user" 
+                    ? "bg-[rgba(0,90,160,0.35)] border border-[rgba(0,180,255,0.2)] text-[#e8f4ff]" 
+                    : "bg-[rgba(30,10,50,0.5)] border border-[rgba(166,123,212,0.2)] text-[#e8f4ff]"
+                }`}
+              >
+                {m.text}
+              </div>
+              <div className={`font-jetbrains text-[9px] text-[#3a6080] mt-1 ${m.sender === "user" ? "text-right" : ""}`}>
+                {m.sender === "user" ? "You" : "DevPilot"} · {m.timestamp}
+              </div>
             </div>
-            <div className="font-jetbrains text-[10px] text-[#3a6080] mt-1 text-right">You · just now</div>
           </div>
-        </div>
-        <div className="flex gap-2.5">
-          <div className="w-7 h-7 shrink-0 rounded-full bg-[rgba(0,180,255,0.1)] border border-[rgba(0,180,255,0.2)] flex items-center justify-center mt-0.5">
-            <svg width="16" height="16" viewBox="0 0 80 80" fill="none"><defs><linearGradient id="cg" x1="0" y1="0" x2="80" y2="80" gradientUnits="userSpaceOnUse"><stop stopColor="#00d4ff"/><stop offset="1" stopColor="#a67bd4"/></linearGradient></defs><polygon points="40,4 72,60 8,60" fill="url(#cg)"/><circle cx="40" cy="38" r="9" fill="#fff" opacity="0.9"/><circle cx="40" cy="38" r="4.5" fill="url(#cg)"/></svg>
+        ))}
+
+        {/* Typing Response */}
+        {typingText && (
+          <div className="flex justify-start gap-2.5">
+            <div className="w-7 h-7 shrink-0 rounded-full bg-[rgba(0,180,255,0.1)] border border-[rgba(0,180,255,0.2)] flex items-center justify-center mt-0.5">
+              <img src="/icon-bg-removed.png" alt="DevPilot" className="w-4 h-4 object-contain" />
+            </div>
+            <div className="max-w-[85%] flex-1">
+              <div className="font-jetbrains px-3.5 py-2.5 rounded-[10px] text-[12px] leading-relaxed bg-[rgba(30,10,50,0.5)] border border-[rgba(166,123,212,0.2)] text-[#e8f4ff] whitespace-pre-wrap">
+                {typingText}
+                <span className="inline-block w-1.5 h-3.5 bg-[#00b4ff] ml-1 align-middle animate-[landing-blink_0.8s_infinite]"/>
+              </div>
+              <div className="font-jetbrains text-[9px] text-[#3a6080] mt-1">DevPilot · typing...</div>
+            </div>
           </div>
-          <div>
-            <div ref={bubbleRef} className="font-jetbrains px-3.5 py-2.5 rounded-[10px] text-[12.5px] leading-relaxed max-w-[82%] bg-[rgba(30,10,50,0.5)] border border-[rgba(166,123,212,0.2)] text-[#e8f4ff] whitespace-pre-wrap" />
-            <div className="font-jetbrains text-[10px] text-[#3a6080] mt-1">DevPilot · <span ref={statusRef}>thinking...</span></div>
+        )}
+
+        {/* Thinking State */}
+        {isThinking && (
+          <div className="flex justify-start gap-2.5">
+            <div className="w-7 h-7 shrink-0 rounded-full bg-[rgba(0,180,255,0.1)] border border-[rgba(0,180,255,0.2)] flex items-center justify-center mt-0.5">
+              <img src="/icon-bg-removed.png" alt="DevPilot" className="w-4 h-4 object-contain" />
+            </div>
+            <div>
+              <div className="font-jetbrains px-4 py-3 rounded-[10px] bg-[rgba(30,10,50,0.5)] border border-[rgba(166,123,212,0.2)] text-[#7ca8cc] flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-[#00b4ff] animate-bounce [animation-delay:-0.3s]" />
+                <span className="w-1.5 h-1.5 rounded-full bg-[#00b4ff] animate-bounce [animation-delay:-0.15s]" />
+                <span className="w-1.5 h-1.5 rounded-full bg-[#00b4ff] animate-bounce" />
+              </div>
+              <div className="font-jetbrains text-[9px] text-[#3a6080] mt-1">DevPilot · thinking...</div>
+            </div>
           </div>
-        </div>
+        )}
       </div>
+
       {/* Input */}
       <div className="flex gap-2 px-3.5 py-3 border-t border-[rgba(255,255,255,0.05)] bg-[rgba(0,0,0,0.2)]">
         <input
-          ref={inputRef}
+          suppressHydrationWarning
           type="text"
+          value={inputText}
+          onChange={handleUserType}
           placeholder="Ask DevPilot anything..."
           autoComplete="off"
           className="font-jetbrains flex-1 bg-[rgba(255,255,255,0.04)] border border-[rgba(0,180,255,0.15)] rounded-lg px-3.5 py-2 text-[#e8f4ff] text-[12px] outline-none focus:border-[rgba(0,180,255,0.4)] transition-colors cursor-none"
-          onKeyDown={(e) => { if (e.key === "Enter") sendMessage(); }}
+          onKeyDown={(e) => { if (e.key === "Enter") handleUserSubmit(); }}
         />
         <button
-          onClick={sendMessage}
+          suppressHydrationWarning
+          onClick={handleUserSubmit}
           className="w-9 h-9 rounded-lg bg-[rgba(0,180,255,0.15)] border border-[rgba(0,180,255,0.3)] text-[#00b4ff] flex items-center justify-center hover:bg-[rgba(0,180,255,0.28)] transition-colors cursor-none"
         >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+            <line x1="22" y1="2" x2="11" y2="13"/>
+            <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+          </svg>
         </button>
       </div>
     </div>

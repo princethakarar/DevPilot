@@ -81,7 +81,7 @@ export default function CustomCursor() {
       <div
         className="w-full h-full transition-all duration-150 ease-out"
         style={{
-          transform: hovered ? "scale(1.4)" : "scale(1)",
+          transform: hovered ? "scale(1.4) rotate(-80deg)" : "scale(1) rotate(-80deg)",
           filter: hovered 
             ? "drop-shadow(0 0 12px rgba(0, 207, 255, 0.95)) drop-shadow(0 0 6px rgba(0, 207, 255, 0.7))" 
             : "drop-shadow(0 0 6px rgba(0, 207, 255, 0.4))",

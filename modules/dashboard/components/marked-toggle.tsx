@@ -55,16 +55,16 @@ export const MarkedToggleButton = forwardRef<HTMLButtonElement, MarkedToggleButt
       <Button
         ref={ref}
         variant="ghost"
-        className={`flex items-center justify-start w-full px-2 py-1.5 text-sm rounded-md cursor-pointer ${className}`}
+        className={`flex items-center justify-start w-full px-2 py-1.5 text-[12px] font-jetbrains text-[#7ca8cc] hover:text-white rounded-md cursor-pointer hover:bg-[rgba(0,180,255,0.08)] transition-colors border-none bg-transparent ${className}`}
         onClick={handleToggle}
         {...props}
       >
         {isMarked ? (
-          <StarIcon size={16} className="text-red-500 mr-2" />
+          <StarIcon size={14} className="text-[#00CFFF] fill-[#00CFFF] mr-2" />
         ) : (
-          <StarOffIcon size={16} className="text-gray-500 mr-2" />
+          <StarIcon size={14} className="text-[#3a6080] mr-2" />
         )}
-        {children || (isMarked ? "Remove Favorite" : "Add to Favorite")}
+        <span className="font-jetbrains text-[12px] text-[#7ca8cc] group-hover:text-white">{children || (isMarked ? "Remove Favorite" : "Add to Favorite")}</span>
       </Button>
     )
   },
