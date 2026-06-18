@@ -99,7 +99,7 @@ const UserButton = () => {
             </Avatar>
             <div className="space-y-1">
               <h4 className="font-bold text-zinc-900 dark:text-zinc-50 leading-tight">
-                {user?.name || "VibeCoder"}
+                {user?.name || "DevPilot Developer"}
               </h4>
               <div className="flex items-center justify-center gap-1.5">
                 {getRoleBadge(user?.role || "USER")}

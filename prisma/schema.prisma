@@ -68,6 +68,9 @@ model Playground {
   title  String
   description String?
   template   Templates  @default(REACT)
+  githubRepo       String?   // "owner/repo" format
+  githubBranch     String?   // branch name
+  githubBaseContent String?  // JSON snapshot of original file tree for diff calculation
   createdAt  DateTime  @default(now())
   updatedAt  DateTime @updatedAt
  
@@ -77,7 +80,6 @@ model Playground {
 
   templateFiles TemplateFile[]
 }
-
 
 model StarMark {
   id  String @id @default(cuid()) @map("_id")

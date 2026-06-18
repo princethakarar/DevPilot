@@ -3,6 +3,7 @@ import { PrismaAdapter } from "@auth/prisma-adapter"
 import { db } from "./lib/db"
 import authConfig from "./auth.config"
 import { getUserById, getAccountByUserId } from "./modules/auth/actions"
+import { cookies } from "next/headers"
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
   callbacks: {
@@ -50,8 +51,16 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           },
         });
 
-        // If the account does not exist, create it
+        // If the account does not exist, verify we have an active session (user is linking)
         if (!existingAccount) {
+          const cookieStore = await cookies();
+          const hasSession = cookieStore.getAll().some(c => c.name.includes("session-token"));
+
+          if (!hasSession) {
+            // User is logged out and trying to log in with a disconnected profile
+            return false;
+          }
+
           await db.account.create({
             data: {
               userId: existingUser.id,

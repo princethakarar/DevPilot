@@ -47,7 +47,10 @@ import {
   Save,
   Settings,
   X,
+  GitBranch,
+  GitCommit,
 } from "lucide-react";
+import CommitDialog from "@/modules/playground/components/dialogs/commit-dialog";
 import { useParams } from "next/navigation";
 import React, {
   useCallback,
@@ -62,6 +65,7 @@ const MainPlaygroundPage = () => {
   const { id } = useParams<{ id: string }>();
   const [isPreviewVisible, setIsPreviewVisible] = useState(true);
   const [isChatOpen, setIsChatOpen] = useState(false);
+  const [isCommitDialogOpen, setIsCommitDialogOpen] = useState(false);
   const [highlightCurrentLine, setHighlightCurrentLine] = useState(true);
 
   const { playgroundData, templateData, isLoading, error, saveTemplateData } =
@@ -423,6 +427,24 @@ const MainPlaygroundPage = () => {
                 <TooltipContent className="bg-[#071428] border border-[rgba(139,92,246,0.25)] text-[#e8f4ff] font-jetbrains text-xs">Save All (Ctrl+Shift+S)</TooltipContent>
               </Tooltip>
 
+              {playgroundData?.githubRepo && playgroundData?.githubBranch && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => setIsCommitDialogOpen(true)}
+                      className="h-8 px-3 rounded-lg text-xs font-semibold font-jetbrains border border-[rgba(168,85,247,0.15)] bg-[#8B5CF6]/5 hover:bg-[#8B5CF6]/15 text-[#a67bd4] transition-all duration-300 cursor-pointer"
+                    >
+                      <GitBranch className="h-3.5 w-3.5 mr-1.5" /> Sync with GitHub
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent className="bg-[#071428] border border-[rgba(168,85,247,0.25)] text-[#e8f4ff] font-jetbrains text-xs">
+                    Commit & Push Changes
+                  </TooltipContent>
+                </Tooltip>
+              )}
+
               <ToggleAI
                 isEnabled={aiSuggestions.isEnabled}
                 onToggle={aiSuggestions.toggleEnabled}
@@ -590,6 +612,15 @@ const MainPlaygroundPage = () => {
             )}
           </div>
         </SidebarInset>
+        {playgroundData?.githubRepo && playgroundData?.githubBranch && (
+          <CommitDialog
+            isOpen={isCommitDialogOpen}
+            onClose={() => setIsCommitDialogOpen(false)}
+            playgroundId={id}
+            githubRepo={playgroundData.githubRepo}
+            githubBranch={playgroundData.githubBranch}
+          />
+        )}
       </>
     </TooltipProvider>
   );

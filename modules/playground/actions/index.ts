@@ -10,6 +10,8 @@ export const getPlaygroundById = async(id:string)=>{
             where:{id},
             select:{
                 title:true,
+                githubRepo:true,
+                githubBranch:true,
                 templateFiles:{
                     select:{
                         content:true
