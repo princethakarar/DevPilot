@@ -146,11 +146,11 @@ export function TemplateFileTree({
   };
 
   return (
-    <Sidebar className="border-r border-[rgba(0,180,255,0.08)] bg-[#020B1F] shadow-[5px_0_25px_rgba(0,0,0,0.3)]">
+    <Sidebar className="border-r border-[#1E2D45] bg-[#0A0F1C]">
       <SidebarContent className="bg-transparent py-4 px-3">
         <SidebarGroup className="p-0">
-          <div className="flex items-center justify-between px-3 py-2 mb-4 rounded-xl border border-[rgba(0,180,255,0.08)] bg-[rgba(7,20,40,0.4)] backdrop-blur-md">
-            <span className="text-xs font-semibold font-jetbrains uppercase tracking-widest text-[#7ca8cc]">
+          <div className="flex items-center justify-between px-3 py-2 mb-4">
+            <span className="text-[9px] font-medium font-sans uppercase tracking-[0.12em] text-[#A5B8CC]">
               {title}
             </span>
             <div className="flex items-center gap-1.5">
@@ -158,7 +158,7 @@ export function TemplateFileTree({
                 <TooltipTrigger asChild>
                   <button 
                     onClick={handleAddRootFile}
-                    className="h-6 w-6 rounded-md flex items-center justify-center text-[#00D4FF] hover:text-[#e8f4ff] hover:bg-[#00D4FF]/10 hover:shadow-[0_0_8px_rgba(0,212,255,0.2)] transition-all duration-200 cursor-pointer outline-none border-none"
+                    className="h-6 w-6 rounded-md flex items-center justify-center text-[#CBD5E1] hover:text-[#38BDF8] hover:bg-[#1A2236] transition-all duration-200 cursor-pointer outline-none border-none"
                   >
                     <FilePlus className="h-3.5 w-3.5" />
                   </button>
@@ -170,24 +170,24 @@ export function TemplateFileTree({
                 <TooltipTrigger asChild>
                   <button 
                     onClick={handleAddRootFolder}
-                    className="h-6 w-6 rounded-md flex items-center justify-center text-[#8B5CF6] hover:text-[#e8f4ff] hover:bg-[#8B5CF6]/10 hover:shadow-[0_0_8px_rgba(139,92,246,0.2)] transition-all duration-200 cursor-pointer outline-none border-none"
+                    className="h-6 w-6 rounded-md flex items-center justify-center text-[#CBD5E1] hover:text-[#38BDF8] hover:bg-[#1A2236] transition-all duration-200 cursor-pointer outline-none border-none"
                   >
                     <FolderPlus className="h-3.5 w-3.5" />
                   </button>
                 </TooltipTrigger>
-                <TooltipContent className="bg-[#071428] border border-[rgba(139,92,246,0.25)] text-[#e8f4ff] font-jetbrains text-xs">New Folder</TooltipContent>
+                <TooltipContent className="bg-[#0D1221] border border-[#1E2D45] text-[#E2EAF4] font-sans text-xs">New Folder</TooltipContent>
               </Tooltip>
-
+ 
               <Tooltip>
                 <TooltipTrigger asChild>
                   <button 
                     onClick={handleCollapseAll}
-                    className="h-6 w-6 rounded-md flex items-center justify-center text-[#7ca8cc] hover:text-[#00D4FF] hover:bg-[#00D4FF]/10 hover:shadow-[0_0_8px_rgba(0,212,255,0.2)] transition-all duration-200 cursor-pointer outline-none border-none"
+                    className="h-6 w-6 rounded-md flex items-center justify-center text-[#CBD5E1] hover:text-[#38BDF8] hover:bg-[#1A2236] transition-all duration-200 cursor-pointer outline-none border-none"
                   >
                     <FolderMinus className="h-3.5 w-3.5" />
                   </button>
                 </TooltipTrigger>
-                <TooltipContent className="bg-[#071428] border border-[rgba(0,180,255,0.25)] text-[#e8f4ff] font-jetbrains text-xs">Collapse All Folders</TooltipContent>
+                <TooltipContent className="bg-[#0D1221] border border-[#1E2D45] text-[#E2EAF4] font-sans text-xs">Collapse All Folders</TooltipContent>
               </Tooltip>
             </div>
           </div>
@@ -307,10 +307,11 @@ function TemplateNode({
     const file = item as TemplateFile;
     const fileName = `${file.filename}.${file.fileExtension}`;
 
-    const isSelected =
+    const isSelected = !!(
       selectedFile &&
       selectedFile.filename === file.filename &&
-      selectedFile.fileExtension === file.fileExtension;
+      selectedFile.fileExtension === file.fileExtension
+    );
 
     const handleRename = () => {
       setIsRenameDialogOpen(true);
@@ -330,40 +331,24 @@ function TemplateNode({
       setIsRenameDialogOpen(false);
     };
 
-    // Helper to map extensions to glowing colors
-    const getFileIconColor = (ext: string) => {
-      switch (ext.toLowerCase()) {
-        case "json":
-        case "lock":
-          return "text-amber-400 drop-shadow-[0_0_4px_rgba(245,158,11,0.5)]";
-        case "js":
-        case "jsx":
-          return "text-yellow-400 drop-shadow-[0_0_4px_rgba(250,204,21,0.5)]";
-        case "ts":
-        case "tsx":
-          return "text-sky-400 drop-shadow-[0_0_4px_rgba(56,189,248,0.5)]";
-        case "css":
-          return "text-blue-400 drop-shadow-[0_0_4px_rgba(96,165,250,0.5)]";
-        case "html":
-          return "text-orange-400 drop-shadow-[0_0_4px_rgba(251,146,60,0.5)]";
-        default:
-          return "text-[#00D4FF] drop-shadow-[0_0_4px_rgba(0,212,255,0.5)]";
-      }
+    const getFileIconColor = (selected: boolean) => {
+      return selected ? "text-[#38BDF8]" : "text-[#CBD5E1]";
     };
-
+ 
     return (
       <SidebarMenuItem className="relative group/item">
         <SidebarMenuButton
           isActive={isSelected}
           onClick={() => onFileSelect?.(file)}
+          style={isSelected ? { textShadow: "0 0 8px rgba(56,189,248,0.3)" } : undefined}
           className={cn(
-            "w-full flex items-center px-3 py-2 text-sm rounded-xl transition-all duration-300 cursor-pointer font-jetbrains border outline-none",
+            "w-full flex items-center px-3 py-1.5 text-[13px] rounded-none transition-all duration-200 cursor-pointer font-sans outline-none border-none",
             isSelected 
-              ? "bg-gradient-to-r from-[rgba(0,212,255,0.15)] to-[rgba(139,92,246,0.15)] text-[#00D4FF] border-l-2 border-l-[#00D4FF] border-y-[rgba(0,212,255,0.2)] border-r-[rgba(0,212,255,0.2)] shadow-[0_0_15px_rgba(0,212,255,0.15)]" 
-              : "text-[#7ca8cc] hover:text-white hover:bg-[#00D4FF]/5 hover:shadow-[inset_0_0_8px_rgba(0,212,255,0.05)] border-transparent"
+              ? "bg-[#111827] text-[#E2EAF4] border-l-2 border-l-[#38BDF8]" 
+              : "text-[#CBD5E1] hover:text-[#E2EAF4] hover:bg-[#0D1627] bg-transparent"
           )}
         >
-          <File className={cn("h-4 w-4 mr-2 shrink-0 transition-transform duration-300 group-hover/item:scale-110", getFileIconColor(file.fileExtension))} />
+          <File className={cn("h-4 w-4 mr-2 shrink-0", getFileIconColor(isSelected))} />
           <span className="truncate">{fileName}</span>
         </SidebarMenuButton>
 
@@ -473,19 +458,16 @@ function TemplateNode({
           <CollapsibleTrigger asChild>
             <SidebarMenuButton
               className={cn(
-                "w-full flex items-center px-3 py-2 text-sm rounded-xl transition-all duration-300 cursor-pointer font-jetbrains border border-transparent text-[#7ca8cc] hover:text-white hover:bg-[#8B5CF6]/5 hover:shadow-[inset_0_0_8px_rgba(139,92,246,0.05)] outline-none"
+                "w-full flex items-center px-3 py-1.5 text-[13px] rounded-none transition-all duration-200 cursor-pointer font-sans text-[#CBD5E1] hover:text-[#E2EAF4] hover:bg-[#0D1627] bg-transparent outline-none border-none"
               )}
             >
               <ChevronRight
                 className={cn(
-                  "h-4 w-4 shrink-0 transition-transform duration-300 text-[#3a6080] mr-1",
-                  isOpen ? "rotate-90 text-[#8B5CF6]" : ""
+                  "h-3.5 w-3.5 shrink-0 transition-all duration-200 text-[#A5B8CC] mr-1",
+                  isOpen ? "rotate-90 text-[#CBD5E1]" : "hover:text-[#CBD5E1]"
                 )}
               />
-              <Folder className={cn(
-                "h-4 w-4 mr-2 shrink-0 transition-transform duration-300 group-hover/folder:scale-110",
-                isOpen ? "text-[#8B5CF6] drop-shadow-[0_0_4px_rgba(139,92,246,0.5)]" : "text-[#3B82F6] drop-shadow-[0_0_4px_rgba(59,130,246,0.4)]"
-              )} />
+              <Folder className="h-4 w-4 mr-2 shrink-0 text-[#CBD5E1]" />
               <span className="truncate">{folderName}</span>
             </SidebarMenuButton>
           </CollapsibleTrigger>
@@ -522,7 +504,7 @@ function TemplateNode({
           </DropdownMenu>
 
           <CollapsibleContent>
-            <SidebarMenuSub className="border-l border-[rgba(0,180,255,0.1)] ml-4 pl-3 space-y-1.5 mt-1">
+            <SidebarMenuSub className="border-l border-[#1E2D45] ml-3 pl-2.5 space-y-1 mt-0.5">
               {folder.items.map((childItem, index) => (
                 <TemplateNode
                   key={index}

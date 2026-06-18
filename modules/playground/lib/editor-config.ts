@@ -59,19 +59,19 @@ export const configureMonaco = (monaco: Monaco) => {
     inherit: true,
     rules: [
       // Comments
-      { token: "comment", foreground: "7C7C7C", fontStyle: "italic" },
-      { token: "comment.line", foreground: "7C7C7C", fontStyle: "italic" },
-      { token: "comment.block", foreground: "7C7C7C", fontStyle: "italic" },
+      { token: "comment", foreground: "3D5470", fontStyle: "italic" },
+      { token: "comment.line", foreground: "3D5470", fontStyle: "italic" },
+      { token: "comment.block", foreground: "3D5470", fontStyle: "italic" },
       
       // Keywords
-      { token: "keyword", foreground: "C586C0", fontStyle: "bold" },
-      { token: "keyword.control", foreground: "C586C0", fontStyle: "bold" },
+      { token: "keyword", foreground: "7DD3FC", fontStyle: "bold" },
+      { token: "keyword.control", foreground: "7DD3FC", fontStyle: "bold" },
       { token: "keyword.operator", foreground: "D4D4D4" },
       
       // Strings
-      { token: "string", foreground: "CE9178" },
-      { token: "string.quoted", foreground: "CE9178" },
-      { token: "string.template", foreground: "CE9178" },
+      { token: "string", foreground: "34D399" },
+      { token: "string.quoted", foreground: "34D399" },
+      { token: "string.template", foreground: "34D399" },
       
       // Numbers
       { token: "number", foreground: "B5CEA8" },
@@ -79,8 +79,8 @@ export const configureMonaco = (monaco: Monaco) => {
       { token: "number.float", foreground: "B5CEA8" },
       
       // Functions
-      { token: "entity.name.function", foreground: "DCDCAA" },
-      { token: "support.function", foreground: "DCDCAA" },
+      { token: "entity.name.function", foreground: "A78BFA" },
+      { token: "support.function", foreground: "A78BFA" },
       
       // Variables
       { token: "variable", foreground: "9CDCFE" },
@@ -110,18 +110,18 @@ export const configureMonaco = (monaco: Monaco) => {
       { token: "tag.id", foreground: "9CDCFE" },
       { token: "tag.class", foreground: "92C5F8" },
       { token: "attribute.name", foreground: "9CDCFE" },
-      { token: "attribute.value", foreground: "CE9178" },
+      { token: "attribute.value", foreground: "34D399" },
       
       // CSS
       { token: "attribute.name.css", foreground: "9CDCFE" },
-      { token: "attribute.value.css", foreground: "CE9178" },
+      { token: "attribute.value.css", foreground: "34D399" },
       { token: "property-name.css", foreground: "9CDCFE" },
-      { token: "property-value.css", foreground: "CE9178" },
+      { token: "property-value.css", foreground: "34D399" },
       
       // JSON
       { token: "key", foreground: "9CDCFE" },
       { token: "string.key", foreground: "9CDCFE" },
-      { token: "string.value", foreground: "CE9178" },
+      { token: "string.value", foreground: "34D399" },
       
       // Error/Warning
       { token: "invalid", foreground: "F44747", fontStyle: "underline" },
@@ -129,40 +129,40 @@ export const configureMonaco = (monaco: Monaco) => {
     ],
     colors: {
       // Editor background
-      "editor.background": "#020B1F",
-      "editor.foreground": "#E6EDF3",
+      "editor.background": "#080C18",
+      "editor.foreground": "#E2EAF4",
       
       // Line numbers
-      "editorLineNumber.foreground": "#3a6080",
-      "editorLineNumber.activeForeground": "#00D4FF",
+      "editorLineNumber.foreground": "#2A3F58",
+      "editorLineNumber.activeForeground": "#38BDF8",
       
       // Cursor
-      "editorCursor.foreground": "#00D4FF",
+      "editorCursor.foreground": "#38BDF8",
       
       // Selection
-      "editor.selectionBackground": "#3B82F64D",
-      "editor.selectionHighlightBackground": "#00D4FF26",
-      "editor.inactiveSelectionBackground": "#3B82F626",
+      "editor.selectionBackground": "#38BDF81F",
+      "editor.selectionHighlightBackground": "#38BDF80F",
+      "editor.inactiveSelectionBackground": "#38BDF80A",
       
       // Current line
-      "editor.lineHighlightBackground": "#00D4FF0A",
-      "editor.lineHighlightBorder": "#00D4FF26",
+      "editor.lineHighlightBackground": "#38BDF80A",
+      "editor.lineHighlightBorder": "#00000000",
       
       // Gutter
-      "editorGutter.background": "#020B1F",
+      "editorGutter.background": "#080C18",
       "editorGutter.modifiedBackground": "#BB800966",
       "editorGutter.addedBackground": "#347D3966",
       "editorGutter.deletedBackground": "#F8514966",
       
       // Scrollbar
       "scrollbar.shadow": "#00000080",
-      "scrollbarSlider.background": "#00D4FF14",
-      "scrollbarSlider.hoverBackground": "#00D4FF26",
-      "scrollbarSlider.activeBackground": "#00D4FF40",
+      "scrollbarSlider.background": "#1E2D4550",
+      "scrollbarSlider.hoverBackground": "#2A4A7F80",
+      "scrollbarSlider.activeBackground": "#38BDF840",
       
       // Minimap
-      "minimap.background": "#020B1F",
-      "minimap.selectionHighlight": "#3B82F64D",
+      "minimap.background": "#080C18",
+      "minimap.selectionHighlight": "#38BDF81F",
       
       // Find/Replace
       "editor.findMatchBackground": "#F59E0B59",
@@ -170,52 +170,52 @@ export const configureMonaco = (monaco: Monaco) => {
       "editor.findRangeHighlightBackground": "#22C55E26",
       
       // Word highlight
-      "editor.wordHighlightBackground": "#00D4FF14",
-      "editor.wordHighlightStrongBackground": "#8B5CF626",
+      "editor.wordHighlightBackground": "#38BDF814",
+      "editor.wordHighlightStrongBackground": "#A78BFA26",
       
       // Brackets
-      "editorBracketMatch.background": "#00D4FF1A",
-      "editorBracketMatch.border": "#00D4FF4D",
+      "editorBracketMatch.background": "#38BDF81A",
+      "editorBracketMatch.border": "#38BDF84D",
       
       // Indentation guides
-      "editorIndentGuide.background": "#00D4FF0A",
-      "editorIndentGuide.activeBackground": "#00D4FF1A",
+      "editorIndentGuide.background": "#38BDF80A",
+      "editorIndentGuide.activeBackground": "#38BDF81A",
       
       // Ruler
-      "editorRuler.foreground": "#00D4FF0D",
+      "editorRuler.foreground": "#38BDF80D",
       
       // Whitespace
-      "editorWhitespace.foreground": "#00D4FF1A",
+      "editorWhitespace.foreground": "#38BDF81A",
       
       // Error/Warning squiggles
       "editorError.foreground": "#F85149",
       "editorWarning.foreground": "#D29922",
-      "editorInfo.foreground": "#00D4FF",
+      "editorInfo.foreground": "#38BDF8",
       "editorHint.foreground": "#EEEEEE",
       
       // Suggest widget
-      "editorSuggestWidget.background": "#071428",
-      "editorSuggestWidget.border": "#00D4FF33",
-      "editorSuggestWidget.foreground": "#E6EDF3",
-      "editorSuggestWidget.selectedBackground": "#00D4FF14",
+      "editorSuggestWidget.background": "#0D1221",
+      "editorSuggestWidget.border": "#1E2D45",
+      "editorSuggestWidget.foreground": "#E2EAF4",
+      "editorSuggestWidget.selectedBackground": "#1A2236",
       
       // Hover widget
-      "editorHoverWidget.background": "#071428",
-      "editorHoverWidget.border": "#00D4FF33",
+      "editorHoverWidget.background": "#0D1221",
+      "editorHoverWidget.border": "#1E2D45",
       
       // Panel
-      "panel.background": "#020B1F",
-      "panel.border": "#00D4FF14",
+      "panel.background": "#080C18",
+      "panel.border": "#1E2D45",
       
       // Activity bar
-      "activityBar.background": "#020B1F",
-      "activityBar.foreground": "#E6EDF3",
-      "activityBar.border": "#00D4FF14",
+      "activityBar.background": "#080C18",
+      "activityBar.foreground": "#E2EAF4",
+      "activityBar.border": "#1E2D45",
       
       // Side bar
-      "sideBar.background": "#020B1F",
-      "sideBar.foreground": "#E6EDF3",
-      "sideBar.border": "#00D4FF14",
+      "sideBar.background": "#080C18",
+      "sideBar.foreground": "#E2EAF4",
+      "sideBar.border": "#1E2D45",
     },
   });
 
@@ -264,8 +264,8 @@ export const configureMonaco = (monaco: Monaco) => {
 
 export const defaultEditorOptions = {
   // Font settings
-  fontSize: 14,
-  fontFamily: "'JetBrains Mono', 'Fira Code', 'SF Mono', Consolas, 'Liberation Mono', Menlo, Courier, monospace",
+  fontSize: 13,
+  fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
   fontLigatures: true,
   fontWeight: "400",
   
@@ -281,7 +281,7 @@ export const defaultEditorOptions = {
   
   // Line settings
   lineNumbers: "on",
-  lineHeight: 20,
+  lineHeight: 22,
   renderLineHighlight: "all",
   renderWhitespace: "selection",
   
@@ -345,7 +345,7 @@ export const defaultEditorOptions = {
   accessibilitySupport: "auto",
   
   // Cursor
-  cursorBlinking: "smooth",
+  cursorBlinking: "blink",
   cursorSmoothCaretAnimation: true,
   cursorStyle: "line",
   cursorWidth: 2,

@@ -87,44 +87,44 @@
 }
 
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
+  --background: #080C18;
+  --foreground: #E2EAF4;
+  --card: #0D1221;
+  --card-foreground: #E2EAF4;
+  --popover: #111827;
+  --popover-foreground: #E2EAF4;
+  --primary: #38BDF8;
+  --primary-foreground: #080C18;
+  --secondary: #0D1221;
+  --secondary-foreground: #6B8CAE;
+  --muted: #0D1221;
+  --muted-foreground: #6B8CAE;
+  --accent: #1A2236;
+  --accent-foreground: #38BDF8;
   --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
+  --border: #1E2D45;
+  --input: #1E2D45;
+  --ring: #2A4A7F;
   --chart-1: oklch(0.87 0 0);
   --chart-2: oklch(0.556 0 0);
   --chart-3: oklch(0.439 0 0);
   --chart-4: oklch(0.371 0 0);
   --chart-5: oklch(0.269 0 0);
-  --sidebar: #020B1F;
-  --sidebar-foreground: #e8f4ff;
-  --sidebar-primary: #00D4FF;
-  --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: rgba(0, 212, 255, 0.08);
-  --sidebar-accent-foreground: #00D4FF;
-  --sidebar-border: rgba(0, 212, 255, 0.08);
-  --sidebar-ring: rgba(0, 212, 255, 0.3);
+  --sidebar: #0A0F1C;
+  --sidebar-foreground: #6B8CAE;
+  --sidebar-primary: #38BDF8;
+  --sidebar-primary-foreground: #E2EAF4;
+  --sidebar-accent: #1A2236;
+  --sidebar-accent-foreground: #38BDF8;
+  --sidebar-border: #1E2D45;
+  --sidebar-ring: #2A4A7F;
 }
 
 @layer base {
   * {
     @apply border-border outline-ring/50;
     scrollbar-width: thin;
-    scrollbar-color: rgba(0, 180, 255, 0.2) #050d1a;
+    scrollbar-color: #1E2D45 transparent;
   }
   body {
     @apply bg-background text-foreground;
@@ -136,22 +136,18 @@
 
 /* Global scrollbar styling */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 4px;
+  height: 4px;
 }
 ::-webkit-scrollbar-track {
-  background: #050d1a;
+  background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(0, 180, 255, 0.2);
+  background: #1E2D45;
   border-radius: 9999px;
-  border: 1px solid transparent;
-  background-clip: padding-box;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(0, 180, 255, 0.4);
-  border: 1px solid transparent;
-  background-clip: padding-box;
+  background: #2A4A7F;
 }
 
 /* Playground tab custom hover effects */

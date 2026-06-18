@@ -317,15 +317,19 @@ const MainPlaygroundPage = () => {
     );
   }
 
-  // Loading state
   if (isLoading) {
     return (
-      <div className="flex flex-col items-center justify-center h-[calc(100vh-4rem)] p-4">
-        <div className="w-full max-w-md p-6 rounded-lg shadow-sm border">
-          <h2 className="text-xl font-semibold mb-6 text-center">
-            Loading Playground
-          </h2>
-          <div className="mb-8">
+      <div className="flex flex-col items-center justify-center h-screen w-full bg-[#080C18] p-4">
+        <div className="w-full max-w-sm bg-[#0D1221] border border-[#1E2D45] rounded-lg p-6 shadow-[0_0_24px_rgba(56,189,248,0.06)]">
+          <div className="flex items-center gap-3 mb-6">
+            <div className="relative flex items-center justify-center w-5 h-5">
+              <span className="animate-spin rounded-full h-4 w-4 border-2 border-[#1E2D45] border-t-[#38BDF8]"></span>
+            </div>
+            <h2 className="text-[13px] font-semibold tracking-[0.1em] text-[#E2EAF4] uppercase font-sans">
+              Initializing Env
+            </h2>
+          </div>
+          <div className="space-y-4">
             <LoadingStep
               currentStep={1}
               step={1}
@@ -373,24 +377,24 @@ const MainPlaygroundPage = () => {
           onRenameFile={wrappedHandleRenameFile}
           onRenameFolder={wrappedHandleRenameFolder}
         />
-        <SidebarInset className="relative flex flex-col bg-[#020B1F] text-[#e8f4ff] border-l border-[rgba(0,212,255,0.08)]">
+        <SidebarInset className="relative flex flex-col bg-[#080C18] text-[#E2EAF4] border-l border-[#1E2D45]">
           {/* Subtle grid background and glowing ambient orbs */}
           <div className="absolute inset-0 z-0 pointer-events-none opacity-20">
-            <div className="absolute inset-0 bg-[linear-gradient(to_right,rgba(0,212,255,0.05)_1px,transparent_1px),linear-gradient(to_bottom,rgba(0,212,255,0.05)_1px,transparent_1px)] bg-[size:3rem_3rem]" />
-            <div className="absolute top-0 right-1/4 w-96 h-96 bg-[#8B5CF6]/10 rounded-full blur-[100px]" />
+            <div className="absolute inset-0 bg-[linear-gradient(to_right,rgba(56,189,248,0.02)_1px,transparent_1px),linear-gradient(to_bottom,rgba(56,189,248,0.02)_1px,transparent_1px)] bg-[size:3rem_3rem]" />
+            <div className="absolute top-0 right-1/4 w-96 h-96 bg-[#1D6FA4]/5 rounded-full blur-[120px]" />
           </div>
-
-          <header className="relative z-10 flex h-16 shrink-0 items-center justify-between gap-4 border-b border-[rgba(0,212,255,0.08)] px-6 bg-[rgba(2,11,31,0.6)] backdrop-blur-md">
+ 
+          <header className="relative z-10 flex h-14 shrink-0 items-center justify-between gap-4 border-b border-[#1E2D45] px-6 bg-[#080C18]">
             <div className="flex items-center gap-3">
-              <SidebarTrigger className="h-8 w-8 rounded-lg text-[#00D4FF] hover:bg-[#00D4FF]/10 hover:text-white border border-[rgba(0,212,255,0.15)] shadow-[0_0_10px_rgba(0,212,255,0.05)] transition-all duration-300 cursor-pointer" />
-              <Separator orientation="vertical" className="h-4 bg-[rgba(0,212,255,0.15)]" />
-
+              <SidebarTrigger className="h-8 w-8 rounded-lg text-[#A5B8CC] hover:text-[#38BDF8] bg-transparent border-none transition-colors duration-200 cursor-pointer" />
+              <Separator orientation="vertical" className="h-4 bg-[#1E2D45]" />
+ 
               <div className="flex flex-col">
-                <h1 className="text-sm font-semibold text-white tracking-wide flex items-center gap-1.5 font-jetbrains">
-                  <span className="w-1.5 h-1.5 rounded-full bg-[#00D4FF] animate-pulse" />
+                <h1 className="text-xs font-semibold text-[#E2EAF4] tracking-wide flex items-center gap-1.5 font-sans">
+                  <span className="w-1.5 h-1.5 rounded-full bg-[#38BDF8] shadow-[0_0_8px_#38BDF8]" />
                   {playgroundData?.title || "Code Playground"}
                 </h1>
-                <p className="text-[10px] text-[#7ca8cc] font-jetbrains">
+                <p className="text-[10px] text-[#CBD5E1] font-sans">
                   {openFiles.length} File(s) open {hasUnsavedChanges && "• Unsaved changes"}
                 </p>
               </div>
@@ -404,14 +408,14 @@ const MainPlaygroundPage = () => {
                     variant="ghost"
                     onClick={() => handleSave()}
                     disabled={!activeFile || !activeFile.hasUnsavedChanges}
-                    className="h-8 px-3 rounded-lg text-xs font-semibold font-jetbrains border border-[rgba(0,212,255,0.15)] bg-[#00D4FF]/5 hover:bg-[#00D4FF]/15 text-[#00D4FF] disabled:opacity-40 transition-all duration-300 cursor-pointer"
+                    className="h-8 px-3 rounded-none text-xs font-medium font-sans border border-[#1E2D45] text-[#CBD5E1] hover:border-[#2A4A7F] hover:text-[#38BDF8] disabled:opacity-30 transition-all duration-200 cursor-pointer"
                   >
                     <Save className="h-3.5 w-3.5 mr-1.5" /> Save
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent className="bg-[#071428] border border-[rgba(0,212,255,0.25)] text-[#e8f4ff] font-jetbrains text-xs">Save (Ctrl+S)</TooltipContent>
+                <TooltipContent className="bg-[#0D1221] border border-[#1E2D45] text-[#E2EAF4] font-sans text-xs">Save (Ctrl+S)</TooltipContent>
               </Tooltip>
-
+ 
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button
@@ -419,12 +423,12 @@ const MainPlaygroundPage = () => {
                     variant="ghost"
                     onClick={handleSaveAll}
                     disabled={!hasUnsavedChanges}
-                    className="h-8 px-3 rounded-lg text-xs font-semibold font-jetbrains border border-[rgba(139,92,246,0.15)] bg-[#8B5CF6]/5 hover:bg-[#8B5CF6]/15 text-[#8B5CF6] disabled:opacity-40 transition-all duration-300 cursor-pointer"
+                    className="h-8 px-3 rounded-none text-xs font-medium font-sans border border-[#1E2D45] text-[#CBD5E1] hover:border-[#2A4A7F] hover:text-[#38BDF8] disabled:opacity-30 transition-all duration-200 cursor-pointer"
                   >
                     <Save className="h-3.5 w-3.5 mr-1.5" /> Save All
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent className="bg-[#071428] border border-[rgba(139,92,246,0.25)] text-[#e8f4ff] font-jetbrains text-xs">Save All (Ctrl+Shift+S)</TooltipContent>
+                <TooltipContent className="bg-[#0D1221] border border-[#1E2D45] text-[#E2EAF4] font-sans text-xs">Save All (Ctrl+Shift+S)</TooltipContent>
               </Tooltip>
 
               {playgroundData?.githubRepo && playgroundData?.githubBranch && (
@@ -455,26 +459,26 @@ const MainPlaygroundPage = () => {
 
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button size="sm" variant="ghost" className="h-8 w-8 rounded-lg border border-[rgba(0,180,255,0.15)] text-[#7ca8cc] hover:text-white hover:bg-[#00D4FF]/10 transition-colors cursor-pointer">
+                  <Button size="sm" variant="ghost" className="h-8 w-8 rounded-none border border-[#1E2D45] text-[#CBD5E1] hover:text-[#38BDF8] hover:border-[#2A4A7F] transition-all cursor-pointer">
                     <Settings className="h-4 w-4" />
                   </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-48 bg-[#071428] border border-[rgba(0,180,255,0.25)] text-[#e8f4ff] rounded-xl shadow-2xl p-1">
+                <DropdownMenuContent align="end" className="w-48 bg-[#0D1221] border border-[#1E2D45] text-[#E2EAF4] rounded-lg shadow-2xl p-1">
                   <DropdownMenuItem
                     onClick={() => setIsPreviewVisible(!isPreviewVisible)}
-                    className="flex items-center gap-2 px-3 py-2 text-xs rounded-lg hover:bg-[#00D4FF]/10 cursor-pointer transition-colors focus:bg-[#00D4FF]/10 focus:text-white"
+                    className="flex items-center gap-2 px-3 py-2 text-xs rounded-md hover:bg-[#1A2236] cursor-pointer transition-colors focus:bg-[#1A2236] focus:text-[#38BDF8]"
                   >
                     {isPreviewVisible ? "Hide" : "Show"} Preview Panel
                   </DropdownMenuItem>
                   <DropdownMenuCheckboxItem
                     checked={highlightCurrentLine}
                     onCheckedChange={setHighlightCurrentLine}
-                    className="flex items-center gap-2 px-3 py-2 text-xs rounded-lg hover:bg-[#00D4FF]/10 text-[#e8f4ff] cursor-pointer transition-colors focus:bg-[#00D4FF]/10 focus:text-[#00D4FF] focus:bg-[#00D4FF]/10 data-[state=checked]:text-[#00D4FF] data-[state=checked]:font-semibold"
+                    className="flex items-center gap-2 px-3 py-2 text-xs rounded-md hover:bg-[#1A2236] text-[#E2EAF4] cursor-pointer transition-colors focus:bg-[#1A2236] focus:text-[#38BDF8] data-[state=checked]:text-[#38BDF8]"
                   >
                     Highlight Active Line
                   </DropdownMenuCheckboxItem>
-                  <DropdownMenuSeparator className="bg-[rgba(0,180,255,0.08)]" />
-                  <DropdownMenuItem onClick={closeAllFiles} className="flex items-center gap-2 px-3 py-2 text-xs rounded-lg hover:bg-rose-500/10 text-rose-400 cursor-pointer transition-colors focus:bg-rose-500/10 focus:text-rose-400">
+                  <DropdownMenuSeparator className="bg-[#1E2D45]" />
+                  <DropdownMenuItem onClick={closeAllFiles} className="flex items-center gap-2 px-3 py-2 text-xs rounded-md hover:bg-rose-500/10 text-rose-400 cursor-pointer transition-colors focus:bg-rose-500/10 focus:text-rose-400">
                     Close All Files
                   </DropdownMenuItem>
                 </DropdownMenuContent>
@@ -491,29 +495,29 @@ const MainPlaygroundPage = () => {
             ) : (
               <>
                 {openFiles.length > 0 ? (
-                  <div className="h-full flex flex-col">
-                    <div className="border-b border-[rgba(0,212,255,0.08)] bg-[rgba(2,11,31,0.4)] px-4 py-2">
+                  <div className="h-full flex flex-col">                    <div className="border-b border-[#1E2D45] bg-[#080C18] px-4 pt-2">
                       <Tabs
                         value={activeFileId || ""}
                         onValueChange={setActiveFileId}
                         className="w-full"
                       >
                         <div className="flex items-center justify-between">
-                          <TabsList className="h-10 bg-transparent p-0 flex gap-2">
+                          <TabsList className="h-10 bg-transparent p-0 flex gap-1 items-end">
                             {openFiles.map((file) => {
                               const isActive = file.id === activeFileId;
                               return (
                                 <TabsTrigger
                                   key={file.id}
                                   value={file.id}
+                                  style={isActive ? { boxShadow: "inset 0 1px 0 #38BDF8" } : undefined}
                                   className={cn(
-                                    "relative h-9 px-4 rounded-xl transition-all duration-300 cursor-pointer font-jetbrains text-xs flex items-center gap-2 border outline-none",
+                                    "relative h-9 px-4 rounded-t-lg rounded-b-none transition-all duration-200 cursor-pointer font-sans text-xs flex items-center gap-2 border-x border-t outline-none group/tab",
                                     isActive
-                                      ? "bg-gradient-to-r from-[rgba(0,212,255,0.12)] to-[rgba(139,92,246,0.12)] text-[#00D4FF] border-[rgba(0,212,255,0.25)] shadow-[0_2px_10px_rgba(0,212,255,0.08)]"
-                                      : "bg-transparent text-[#7ca8cc] border-transparent hover:text-white hover:bg-[rgba(0,212,255,0.04)]"
+                                      ? "bg-[#0D1221] text-[#E2EAF4] border-[#1E2D45] border-b-transparent z-10"
+                                      : "bg-transparent text-[#CBD5E1] border-transparent hover:text-[#E2EAF4]"
                                   )}
                                 >
-                                  <FileText className={cn("h-3.5 w-3.5", isActive ? "text-[#00D4FF]" : "text-[#3a6080]")} />
+                                  <FileText className={cn("h-3.5 w-3.5", isActive ? "text-[#38BDF8]" : "text-[#CBD5E1]")} />
                                   <span>
                                     {file.filename}.{file.fileExtension}
                                   </span>
@@ -521,7 +525,7 @@ const MainPlaygroundPage = () => {
                                     <span className="h-1.5 w-1.5 rounded-full bg-orange-400 animate-pulse" />
                                   )}
                                   <span
-                                    className="ml-2 h-4 w-4 hover:bg-rose-500/20 hover:text-rose-400 rounded-md flex items-center justify-center transition-all cursor-pointer opacity-40 hover:opacity-100"
+                                    className="ml-2 h-4 w-4 hover:bg-[#1A2236] rounded flex items-center justify-center transition-all cursor-pointer opacity-0 group-hover/tab:opacity-100 text-[#6B8CAE]"
                                     onClick={(e) => {
                                       e.stopPropagation();
                                       closeFile(file.id);
@@ -529,22 +533,17 @@ const MainPlaygroundPage = () => {
                                   >
                                     <X className="size-3" />
                                   </span>
-                                  
-                                  {/* Gradient active bottom indicator */}
-                                  {isActive && (
-                                    <span className="absolute bottom-[-9px] left-0 right-0 h-[2px] bg-gradient-to-r from-[#00D4FF] via-[#3B82F6] to-[#8B5CF6] rounded-full" />
-                                  )}
                                 </TabsTrigger>
                               );
                             })}
                           </TabsList>
-
+ 
                           {openFiles.length > 1 && (
                             <Button
                               size="sm"
                               variant="ghost"
                               onClick={closeAllFiles}
-                              className="h-7 px-3 text-xs font-semibold rounded-lg border border-[rgba(0,212,255,0.15)] text-[#7ca8cc] hover:text-[#00D4FF] hover:bg-[#00D4FF]/10 transition-all cursor-pointer"
+                              className="h-7 px-3 text-xs font-medium rounded-none border border-[#1E2D45] text-[#6B8CAE] hover:text-[#38BDF8] hover:border-[#2A4A7F] transition-all cursor-pointer"
                             >
                               Close All
                             </Button>
@@ -580,8 +579,8 @@ const MainPlaygroundPage = () => {
 
                         {isPreviewVisible && (
                           <>
-                            <ResizableHandle className="w-[1.5px] bg-[rgba(0,212,255,0.08)] hover:bg-[#00D4FF]/50 transition-colors" />
-                            <ResizablePanel defaultSize={50} className="bg-[rgba(2,11,31,0.3)] border-l border-[rgba(0,212,255,0.08)]">
+                            <ResizableHandle className="w-[1.5px] bg-[#1E2D45] hover:bg-[#2A4A7F] transition-colors" />
+                            <ResizablePanel defaultSize={50} className="bg-[#0D1221] border-l border-[#1E2D45]">
                               <WebContainerPreview
                                 templateData={templateData}
                                 instance={instance}
