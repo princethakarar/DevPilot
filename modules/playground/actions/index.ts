@@ -5,6 +5,7 @@ import { TemplateFolder } from "../lib/path-to-json";
 import { currentUser } from "@/modules/auth/actions";
 
 export const getPlaygroundById = async(id:string)=>{
+    if (!id || id === "undefined") return null;
     try {
         const playground = await db.playground.findUnique({
             where:{id},

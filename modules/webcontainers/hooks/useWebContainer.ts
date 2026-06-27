@@ -1,11 +1,7 @@
 "use client"
 import { useState, useEffect, useCallback } from "react";
 import { WebContainer } from "@webcontainer/api";
-import { TemplateFolder } from "@/modules/playground/lib/path-to-json";
-
-interface UseWebContainerProps {
-  templateData: TemplateFolder;
-}
+import { getWebContainer, prebootWebContainer } from "@/lib/webcontainer";
 
 interface UseWebContaierReturn {
   serverUrl: string | null;
@@ -16,24 +12,11 @@ interface UseWebContaierReturn {
   destory: () => void;
 }
 
-async function getWebContainerInstance(): Promise<WebContainer> {
-  if (typeof window === "undefined") {
-    throw new Error("WebContainer can only be booted in the browser");
-  }
+// Kick off boot immediately when this module is first imported — runs in
+// parallel with any async work the playground page does (template fetch, etc.)
+prebootWebContainer();
 
-  const win = window as any;
-  if (!win.__webcontainerInstancePromise) {
-    win.__webcontainerInstancePromise = WebContainer.boot().catch((err) => {
-      win.__webcontainerInstancePromise = null;
-      throw err;
-    });
-  }
-  return win.__webcontainerInstancePromise;
-}
-
-export const useWebContainer = ({
-  templateData,
-}: UseWebContainerProps): UseWebContaierReturn => {
+export const useWebContainer = (): UseWebContaierReturn => {
   const [serverUrl, setServerUrl] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
@@ -42,28 +25,20 @@ export const useWebContainer = ({
   useEffect(() => {
     let mounted = true;
 
-    async function initializeWebContainer() {
-      try {
-        const webcontainerInstance = await getWebContainerInstance();
-
+    getWebContainer()
+      .then((wc) => {
         if (!mounted) return;
-
-        setInstance(webcontainerInstance);
+        setInstance(wc);
         setIsLoading(false);
-      } catch (error) {
-        console.error("Failed to initialize WebContainer:", error);
-        if (mounted) {
-          setError(
-            error instanceof Error
-              ? error.message
-              : "Failed to initialize WebContainer"
-          );
-          setIsLoading(false);
-        }
-      }
-    }
-
-    initializeWebContainer();
+      })
+      .catch((err) => {
+        console.error("Failed to initialize WebContainer:", err);
+        if (!mounted) return;
+        setError(
+          err instanceof Error ? err.message : "Failed to initialize WebContainer"
+        );
+        setIsLoading(false);
+      });
 
     return () => {
       mounted = false;
@@ -75,33 +50,27 @@ export const useWebContainer = ({
       if (!instance) {
         throw new Error("WebContainer instance is not available");
       }
-
       try {
-        const pathParts = path.split("/");
-        const folderPath = pathParts.slice(0, -1).join("/");
-
+        const folderPath = path.split("/").slice(0, -1).join("/");
         if (folderPath) {
-          await instance.fs.mkdir(folderPath, { recursive: true }); // Create folder structure recursively
+          await instance.fs.mkdir(folderPath, { recursive: true });
         }
-
         await instance.fs.writeFile(path, content);
       } catch (err) {
-        const errorMessage =
-          err instanceof Error ? err.message : "Failed to write file";
-        console.error(`Failed to write file at ${path}:`, err);
-        throw new Error(`Failed to write file at ${path}: ${errorMessage}`);
+        const msg = err instanceof Error ? err.message : "Failed to write file";
+        throw new Error(`Failed to write file at ${path}: ${msg}`);
       }
     },
     [instance]
   );
 
-  const destory = useCallback(()=>{
-    if(instance){
-        instance.teardown()
-        setInstance(null);
-        setServerUrl(null)
+  const destory = useCallback(() => {
+    if (instance) {
+      instance.teardown();
+      setInstance(null);
+      setServerUrl(null);
     }
-  },[instance])
+  }, [instance]);
 
-  return {serverUrl , isLoading , error , instance , writeFileSync , destory}
+  return { serverUrl, isLoading, error, instance, writeFileSync, destory };
 };

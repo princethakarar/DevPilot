@@ -21,20 +21,28 @@ const AddNewButton = () => {
   const router = useRouter()
 
 
-  const handleSubmit = async (data:{
-      title: string;
-    template: "REACT" | "NEXTJS" | "EXPRESS" | "VUE" | "HONO" | "ANGULAR";
+  const handleSubmit = async (data: {
+    title: string;
+    template: "REACT" | "NEXTJS" | "EXPRESS" | "VUE" | "ANGULAR";
     description?: string;
-  })=>{
-    setSelectedTemplate(data)
+  }) => {
+    setSelectedTemplate(data);
 
     const res = await createPlayground(data);
-    toast.success("Playground Created successfully"
-      
-    )
-    setIsModalOpen(false)
-    router.push(`/playground/${res?.id}`)
-  }
+    
+    if (res?.error) {
+      toast.error(res.error);
+      return;
+    }
+
+    if (res?.playground?.id) {
+      toast.success("Playground Created successfully");
+      setIsModalOpen(false);
+      router.push(`/playground/${res.playground.id}`);
+    } else {
+      toast.error("Failed to create playground. Please try again.");
+    }
+  };
 
 
   return (

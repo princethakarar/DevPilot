@@ -19,4 +19,14 @@ export default {
       clientSecret: process.env.AUTH_GOOGLE_SECRET,
     }),
   ],
+  pages: {
+    signIn: "/auth/sign-in",
+  },
+  callbacks: {
+    async redirect({ url, baseUrl }) {
+      if (url.startsWith("/")) return `${baseUrl}${url}`
+      if (new URL(url).origin === baseUrl) return url
+      return baseUrl
+    }
+  }
 } satisfies NextAuthConfig

@@ -18,7 +18,11 @@ export default auth((req) => {
     }
 
     if(!isLoggedIn && !isPublicRoute && !isAuthRoute){
-        return Response.redirect(new URL("/auth/sign-in", nextUrl))
+        if (nextUrl.pathname.startsWith("/api/")) {
+            return Response.json({ message: "Unauthorized" }, { status: 401 })
+        }
+        const callbackUrl = nextUrl.pathname + nextUrl.search;
+        return Response.redirect(new URL(`/auth/sign-in?callbackUrl=${encodeURIComponent(callbackUrl)}`, nextUrl))
     }
 
     return null

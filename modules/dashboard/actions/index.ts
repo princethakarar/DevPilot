@@ -72,26 +72,41 @@ export const getAllPlaygroundForUser = async () => {
 
 export const createPlayground = async (data: {
   title: string;
-  template: "REACT" | "NEXTJS" | "EXPRESS" | "VUE" | "HONO" | "ANGULAR";
+  template: "REACT" | "NEXTJS" | "EXPRESS" | "VUE" | "ANGULAR";
   description?: string;
 }) => {
   const user = await currentUser();
+  if (!user || !user.id) {
+    return { error: "Unauthorized" };
+  }
 
   const { template, title, description } = data;
 
   try {
+    const existingProject = await db.playground.findFirst({
+      where: {
+        userId: user.id,
+        title: title,
+      },
+    });
+
+    if (existingProject) {
+      return { error: "A project with this name already exists." };
+    }
+
     const playground = await db.playground.create({
       data: {
         title: title,
         description: description,
         template: template,
-        userId: user?.id!,
+        userId: user.id,
       },
     });
 
-    return playground;
+    return { playground };
   } catch (error) {
-    console.log(error);
+    console.error("Error creating playground:", error);
+    return { error: "Failed to create playground" };
   }
 };
 

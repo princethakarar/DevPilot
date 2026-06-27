@@ -25,7 +25,7 @@ export async function GET(
 
 const {id} = await params;
 
-if(!id){
+if(!id || id === "undefined"){
       return Response.json({ error: "Missing playground ID" }, { status: 400 });
 }
 

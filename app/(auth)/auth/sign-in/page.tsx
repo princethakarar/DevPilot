@@ -1,8 +1,12 @@
 import SignInFormClient from '@/modules/auth/components/sign-in-form-client'
-import React from 'react'
+import React, { Suspense } from 'react'
 
 const Page = () => {
-  return <SignInFormClient />
+  return (
+    <Suspense>
+      <SignInFormClient />
+    </Suspense>
+  )
 }
 
 export default Page

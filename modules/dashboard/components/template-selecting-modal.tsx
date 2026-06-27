@@ -33,7 +33,7 @@ type TemplateSelectionModalProps = {
   onClose: () => void;
   onSubmit: (data: {
     title: string;
-    template: "REACT" | "NEXTJS" | "EXPRESS" | "VUE" | "HONO" | "ANGULAR";
+    template: "REACT" | "NEXTJS" | "EXPRESS" | "VUE" | "ANGULAR";
     description?: string;
   }) => void;
 };
@@ -99,22 +99,7 @@ const templates: TemplateOption[] = [
     features: ["Reactive Data Binding", "Component System", "Virtual DOM"],
     category: "frontend",
   },
-  {
-    id: "hono",
-    name: "Hono",
-    description:
-      "Fast, lightweight web framework built on Web Standards with support for any JavaScript runtime.",
-    icon: "/hono.svg",
-    color: "#e36002",
-    popularity: 3,
-    tags: ["TypeScript", "API", "Backend"],
-    features: [
-      "Ultrafast Routing",
-      "TypeScript Support",
-      "Middleware Support",
-    ],
-    category: "backend",
-  },
+
   {
     id: "angular",
     name: "Angular",
@@ -176,13 +161,12 @@ const TemplateSelectionModal = ({
     if (selectedTemplate) {
       const templateMap: Record<
         string,
-        "REACT" | "NEXTJS" | "EXPRESS" | "VUE" | "HONO" | "ANGULAR"
+        "REACT" | "NEXTJS" | "EXPRESS" | "VUE" | "ANGULAR"
       > = {
         react: "REACT",
         nextjs: "NEXTJS",
         express: "EXPRESS",
         vue: "VUE",
-        hono: "HONO",
         angular: "ANGULAR",
       };
 
@@ -204,19 +188,7 @@ const TemplateSelectionModal = ({
     setStep("select");
   };
 
-  const renderStars = (count: number) => {
-    return Array(5)
-      .fill(0)
-      .map((_, i) => (
-        <Star
-          key={i}
-          size={14}
-          className={
-            i < count ? "fill-yellow-400 text-yellow-400" : "text-gray-300"
-          }
-        />
-      ));
-  };
+
 
   return (
     <Dialog
@@ -291,9 +263,7 @@ const TemplateSelectionModal = ({
                           `}
                         onClick={() => handleSelectTemplate(template.id)}
                       >
-                        <div className="absolute top-4 right-4 flex gap-1">
-                          {renderStars(template.popularity)}
-                        </div>
+
 
                         {selectedTemplate === template.id && (
                           <div className="absolute top-2 left-2 bg-[#00CFFF] text-[#050d1a] rounded-full p-1 shadow-[0_0_10px_rgba(0,195,255,0.3)]">
@@ -378,14 +348,7 @@ const TemplateSelectionModal = ({
               </RadioGroup>
             </div>
 
-            <div className="flex justify-between gap-3 mt-4 pt-4 border-t border-[rgba(0,180,255,0.1)]">
-              <div className="flex items-center text-sm text-[#3a6080]">
-                <Clock size={14} className="mr-1" />
-                <span className="font-jetbrains text-[12px]">
-                  Estimated setup:{" "}
-                  {selectedTemplate ? "2-5 minutes" : "Select a template"}
-                </span>
-              </div>
+            <div className="flex justify-end gap-3 mt-4 pt-4 border-t border-[rgba(0,180,255,0.1)]">
               <div className="flex gap-3">
                 <Button variant="outline" onClick={onClose} className="border border-[rgba(0,180,255,0.15)] bg-transparent text-[#7ca8cc] hover:bg-[rgba(0,180,255,0.08)] hover:text-white font-jetbrains text-[13px]">
                   Cancel

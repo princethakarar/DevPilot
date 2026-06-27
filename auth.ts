@@ -112,6 +112,16 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
 
     return session;
     },
+
+    async redirect({ url, baseUrl }) {
+      if (url.startsWith("/")) return `${baseUrl}${url}`
+      try {
+        if (new URL(url).origin === baseUrl) return url
+      } catch {
+        // invalid URL, fall through to baseUrl
+      }
+      return baseUrl
+    },
   },
   secret: process.env.AUTH_SECRET,
   adapter: PrismaAdapter(db),
