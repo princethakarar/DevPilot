@@ -4,7 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { format } from "date-fns";
 import type { Project } from "../types";
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { MoreHorizontal, Edit3, Trash2, ExternalLink, Copy, Download, Eye, Plus, ArrowRight, GitBranch, Zap, FolderOpen, Rocket, LogOut, Mail, Calendar, Hash, Check, Sparkles, ShieldAlert, User } from "lucide-react";
@@ -24,7 +24,6 @@ import LogoutButton from "@/modules/auth/components/logout-button";
 import HeroCanvas from "@/modules/home/landing/hero-canvas";
 import { signIn } from "next-auth/react";
 import { disconnectProvider } from "@/modules/auth/actions";
-import { prebootWebContainer } from "@/lib/webcontainer";
 
 interface DashboardContentProps {
   user: { 
@@ -46,13 +45,6 @@ interface DashboardContentProps {
 
 export default function DashboardContent({ user, projects, onDeleteProject, onUpdateProject, onDuplicateProject }: DashboardContentProps) {
   const router = useRouter();
-
-  // Pre-boot WebContainer as soon as the dashboard loads so it's ready
-  // (or nearly ready) by the time the user clicks "Open Playground".
-  useEffect(() => {
-    prebootWebContainer();
-  }, []);
-
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isRepoDialogOpen, setIsRepoDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);

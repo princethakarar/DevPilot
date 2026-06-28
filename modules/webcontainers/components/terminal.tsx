@@ -307,8 +307,14 @@ TerminalComponent = forwardRef<TerminalRef, TerminalProps>(({
     terminal.onData(handleTerminalInput);
 
     // Initial fit
-    setTimeout(() => {
-      fitAddonInstance.fit();
+    const initialFitTimeout = setTimeout(() => {
+      try {
+        if (term.current?.element) {
+          fitAddonInstance.fit();
+        }
+      } catch (e) {
+        // Ignore fit errors if terminal is unmounted
+      }
     }, 100);
 
     // Welcome message
@@ -387,10 +393,18 @@ TerminalComponent = forwardRef<TerminalRef, TerminalProps>(({
     initializeTerminal();
 
     // Handle resize
+    let resizeTimeout: NodeJS.Timeout;
     const resizeObserver = new ResizeObserver(() => {
       if (fitAddon.current) {
-        setTimeout(() => {
-          fitAddon.current?.fit();
+        clearTimeout(resizeTimeout);
+        resizeTimeout = setTimeout(() => {
+          try {
+            if (term.current?.element) {
+              fitAddon.current?.fit();
+            }
+          } catch (e) {
+            // Ignore fit errors on disposed terminal
+          }
         }, 100);
       }
     });
@@ -401,6 +415,7 @@ TerminalComponent = forwardRef<TerminalRef, TerminalProps>(({
 
     return () => {
       resizeObserver.disconnect();
+      clearTimeout(resizeTimeout);
       if (currentProcess.current) {
         currentProcess.current.kill();
       }
@@ -411,6 +426,7 @@ TerminalComponent = forwardRef<TerminalRef, TerminalProps>(({
         term.current.dispose();
         term.current = null;
       }
+      fitAddon.current = null;
     };
   }, [initializeTerminal]);
 

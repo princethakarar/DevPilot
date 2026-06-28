@@ -391,7 +391,7 @@ const MainPlaygroundPage = () => {
           onRenameFile={wrappedHandleRenameFile}
           onRenameFolder={wrappedHandleRenameFolder}
         />
-        <SidebarInset className="relative flex flex-col min-w-0 bg-[#080C18] text-[#E2EAF4] border-l border-[#1E2D45]">
+        <SidebarInset className="relative flex flex-col bg-[#080C18] text-[#E2EAF4] border-l border-[#1E2D45]">
           {/* Subtle grid background and glowing ambient orbs */}
           <div className="absolute inset-0 z-0 pointer-events-none opacity-20">
             <div className="absolute inset-0 bg-[linear-gradient(to_right,rgba(56,189,248,0.02)_1px,transparent_1px),linear-gradient(to_bottom,rgba(56,189,248,0.02)_1px,transparent_1px)] bg-[size:3rem_3rem]" />
@@ -500,7 +500,7 @@ const MainPlaygroundPage = () => {
             </div>
           </header>
 
-          <div className="relative z-10 flex-1 flex flex-col min-h-0 min-w-0">
+          <div className="relative z-10 flex-1 flex flex-col min-h-0">
             {isChatOpen ? (
               <AIChatSidePanel
                 isOpen={isChatOpen}
@@ -509,63 +509,58 @@ const MainPlaygroundPage = () => {
             ) : (
               <>
                 {openFiles.length > 0 ? (
-                  <div className="h-full flex flex-col min-w-0 w-full">
-                    <div className="border-b border-[#1E2D45] bg-[#080C18] px-4 pt-2 min-w-0 w-full">
+                  <div className="h-full flex flex-col">                    <div className="border-b border-[#1E2D45] bg-[#080C18] px-4 pt-2">
                       <Tabs
                         value={activeFileId || ""}
                         onValueChange={setActiveFileId}
-                        className="w-full min-w-0"
+                        className="w-full"
                       >
-                        <div className="flex items-center justify-between w-full h-10 overflow-hidden min-w-0">
-                          <div className="flex-1 min-w-0 overflow-x-auto overflow-y-hidden [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
-                            <TabsList className="h-10 bg-transparent p-0 flex gap-1 items-end w-max min-w-full">
-                              {openFiles.map((file) => {
-                                const isActive = file.id === activeFileId;
-                                return (
-                                  <TabsTrigger
-                                    key={file.id}
-                                    value={file.id}
-                                    style={isActive ? { boxShadow: "inset 0 1px 0 #38BDF8" } : undefined}
-                                    className={cn(
-                                      "relative h-9 px-4 rounded-t-lg rounded-b-none transition-all duration-200 cursor-pointer font-sans text-xs flex items-center gap-2 border-x border-t outline-none group/tab shrink-0",
-                                      isActive
-                                        ? "bg-[#0D1221] text-[#E2EAF4] border-[#1E2D45] border-b-transparent z-10"
-                                        : "bg-transparent text-[#CBD5E1] border-transparent hover:text-[#E2EAF4]"
-                                    )}
+                        <div className="flex items-center justify-between">
+                          <TabsList className="h-10 bg-transparent p-0 flex gap-1 items-end">
+                            {openFiles.map((file) => {
+                              const isActive = file.id === activeFileId;
+                              return (
+                                <TabsTrigger
+                                  key={file.id}
+                                  value={file.id}
+                                  style={isActive ? { boxShadow: "inset 0 1px 0 #38BDF8" } : undefined}
+                                  className={cn(
+                                    "relative h-9 px-4 rounded-t-lg rounded-b-none transition-all duration-200 cursor-pointer font-sans text-xs flex items-center gap-2 border-x border-t outline-none group/tab",
+                                    isActive
+                                      ? "bg-[#0D1221] text-[#E2EAF4] border-[#1E2D45] border-b-transparent z-10"
+                                      : "bg-transparent text-[#CBD5E1] border-transparent hover:text-[#E2EAF4]"
+                                  )}
+                                >
+                                  <FileText className={cn("h-3.5 w-3.5", isActive ? "text-[#38BDF8]" : "text-[#CBD5E1]")} />
+                                  <span>
+                                    {file.filename}.{file.fileExtension}
+                                  </span>
+                                  {file.hasUnsavedChanges && (
+                                    <span className="h-1.5 w-1.5 rounded-full bg-orange-400 animate-pulse" />
+                                  )}
+                                  <span
+                                    className="ml-2 h-4 w-4 hover:bg-[#1A2236] rounded flex items-center justify-center transition-all cursor-pointer opacity-0 group-hover/tab:opacity-100 text-[#6B8CAE]"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      closeFile(file.id);
+                                    }}
                                   >
-                                    <FileText className={cn("h-3.5 w-3.5", isActive ? "text-[#38BDF8]" : "text-[#CBD5E1]")} />
-                                    <span className="whitespace-nowrap">
-                                      {file.filename}.{file.fileExtension}
-                                    </span>
-                                    {file.hasUnsavedChanges && (
-                                      <span className="h-1.5 w-1.5 rounded-full bg-orange-400 animate-pulse shrink-0" />
-                                    )}
-                                    <span
-                                      className="ml-2 h-4 w-4 hover:bg-[#1A2236] rounded flex items-center justify-center transition-all cursor-pointer opacity-0 group-hover/tab:opacity-100 text-[#6B8CAE] shrink-0"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        closeFile(file.id);
-                                      }}
-                                    >
-                                      <X className="size-3" />
-                                    </span>
-                                  </TabsTrigger>
-                                );
-                              })}
-                            </TabsList>
-                          </div>
+                                    <X className="size-3" />
+                                  </span>
+                                </TabsTrigger>
+                              );
+                            })}
+                          </TabsList>
  
                           {openFiles.length > 1 && (
-                            <div className="shrink-0 pl-2 pr-1 py-1 bg-[#080C18] relative z-20 shadow-[-12px_0_15px_-4px_#080C18]">
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                onClick={closeAllFiles}
-                                className="h-7 px-3 text-xs font-medium rounded-none border border-[#1E2D45] text-[#6B8CAE] hover:text-[#38BDF8] hover:border-[#2A4A7F] transition-all cursor-pointer"
-                              >
-                                Close All
-                              </Button>
-                            </div>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={closeAllFiles}
+                              className="h-7 px-3 text-xs font-medium rounded-none border border-[#1E2D45] text-[#6B8CAE] hover:text-[#38BDF8] hover:border-[#2A4A7F] transition-all cursor-pointer"
+                            >
+                              Close All
+                            </Button>
                           )}
                         </div>
                       </Tabs>
