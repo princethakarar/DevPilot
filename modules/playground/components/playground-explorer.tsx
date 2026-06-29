@@ -13,6 +13,7 @@ import {
   Trash2,
   Edit3,
   FolderMinus,
+  RefreshCw,
 } from "lucide-react";
 
 import {
@@ -90,6 +91,7 @@ interface TemplateFileTreeProps {
     newFolderName: string,
     parentPath: string
   ) => void;
+  onRefresh?: () => Promise<void>;
 }
 
 export function TemplateFileTree({
@@ -103,12 +105,14 @@ export function TemplateFileTree({
   onDeleteFolder,
   onRenameFile,
   onRenameFolder,
+  onRefresh,
 }: TemplateFileTreeProps) {
   const isRootFolder = data && typeof data === "object" && "folderName" in data;
   const [isNewFileDialogOpen, setIsNewFileDialogOpen] = React.useState(false);
   const [isNewFolderDialogOpen, setIsNewFolderDialogOpen] =
     React.useState(false);
   const [collapseTrigger, setCollapseTrigger] = React.useState(0);
+  const [isRefreshing, setIsRefreshing] = React.useState(false);
 
   const handleAddRootFile = () => {
     setIsNewFileDialogOpen(true);
@@ -120,6 +124,17 @@ export function TemplateFileTree({
 
   const handleCollapseAll = () => {
     setCollapseTrigger((prev) => prev + 1);
+  };
+
+  const handleRefresh = async () => {
+    if (onRefresh) {
+      setIsRefreshing(true);
+      try {
+        await onRefresh();
+      } finally {
+        setIsRefreshing(false);
+      }
+    }
   };
 
   const handleCreateFile = (filename: string, extension: string) => {
@@ -176,6 +191,19 @@ export function TemplateFileTree({
                   </button>
                 </TooltipTrigger>
                 <TooltipContent className="bg-[#0D1221] border border-[#1E2D45] text-[#E2EAF4] font-sans text-xs">New Folder</TooltipContent>
+              </Tooltip>
+
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button 
+                    onClick={handleRefresh}
+                    disabled={isRefreshing}
+                    className="h-6 w-6 rounded-md flex items-center justify-center text-[#CBD5E1] hover:text-[#38BDF8] hover:bg-[#1A2236] transition-all duration-200 cursor-pointer outline-none border-none disabled:opacity-50"
+                  >
+                    <RefreshCw className={cn("h-3.5 w-3.5", isRefreshing && "animate-spin")} />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent className="bg-[#0D1221] border border-[#1E2D45] text-[#E2EAF4] font-sans text-xs">Sync from Terminal</TooltipContent>
               </Tooltip>
  
               <Tooltip>

@@ -113,11 +113,15 @@ export default function DashboardContent({ user, projects, onDeleteProject, onUp
     }
   };
 
-  const handleCreateProject = async (data: { title: string; template: "REACT" | "NEXTJS" | "EXPRESS" | "VUE" | "HONO" | "ANGULAR"; description?: string }) => {
+  const handleCreateProject = async (data: { title: string; template: "NODE"; description?: string }) => {
     const res = await createPlayground(data);
+    if (res?.error) {
+      toast.error(res.error);
+      return;
+    }
     toast.success("Playground Created successfully");
     setIsModalOpen(false);
-    router.push(`/playground/${res?.id}`);
+    router.push(`/playground/${res.playground?.id}`);
   };
 
   const handleEditClick = (project: Project) => { setSelectedProject(project); setEditData({ title: project.title, description: project.description || "" }); setEditDialogOpen(true); };

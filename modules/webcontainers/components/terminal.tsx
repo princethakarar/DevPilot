@@ -16,6 +16,7 @@ interface TerminalProps {
   className?: string;
   theme?: "dark" | "light";
   webContainerInstance?: any;
+  onCommandComplete?: (command: string, exitCode: number) => void;
 }
 
 // Define the methods that will be exposed through the ref
@@ -30,7 +31,8 @@ TerminalComponent = forwardRef<TerminalRef, TerminalProps>(({
   webcontainerUrl, 
   className,
   theme = "dark",
-  webContainerInstance
+  webContainerInstance,
+  onCommandComplete
 }, ref) => {
   const terminalRef = useRef<HTMLDivElement>(null);
   const term = useRef<Terminal | null>(null);
@@ -181,6 +183,10 @@ TerminalComponent = forwardRef<TerminalRef, TerminalProps>(({
       const exitCode = await process.exit;
       currentProcess.current = null;
 
+      if (onCommandComplete) {
+        onCommandComplete(command, exitCode);
+      }
+
       // Show new prompt
       writePrompt();
 
@@ -191,10 +197,30 @@ TerminalComponent = forwardRef<TerminalRef, TerminalProps>(({
       }
       currentProcess.current = null;
     }
-  }, [webContainerInstance, writePrompt]);
+  }, [webContainerInstance, writePrompt, onCommandComplete]);
 
   const handleTerminalInput = useCallback((data: string) => {
     if (!term.current) return;
+
+    if (data === '\u0003' && currentProcess.current) {
+      currentProcess.current.kill();
+      currentProcess.current = null;
+      term.current.writeln("^C");
+      writePrompt();
+      return;
+    }
+
+    // If a process is running, pass input directly to its stdin
+    if (currentProcess.current) {
+      try {
+        const writer = currentProcess.current.input.getWriter();
+        writer.write(data);
+        writer.releaseLock();
+      } catch (err) {
+        console.error("Failed to write to process input", err);
+      }
+      return;
+    }
 
     // Handle special characters
     switch (data) {

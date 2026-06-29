@@ -1,5 +1,5 @@
 "use client";
-import React, { useEffect, useState, useRef } from "react";
+import React, { useEffect, useState, useRef, useCallback } from "react";
 
 import { Loader2, XCircle, AlertTriangle, RefreshCw, Lightbulb } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
@@ -9,6 +9,7 @@ import { TemplateFolder } from "@/modules/playground/lib/path-to-json";
 import dynamic from "next/dynamic";
 import { useProjectBoot } from "../hooks/useProjectBoot";
 import { DependencyStatus } from "./dependency-status";
+import { useFileExplorer } from "@/modules/playground/hooks/useFileExplorer";
 
 const TerminalComponent = dynamic(() => import("./terminal"), { ssr: false });
 
@@ -29,6 +30,7 @@ const TEMPLATE_ID_MAP: Record<string, string> = {
   "express-simple": "vanilla",
   "hono-nodejs-starter": "vanilla",
   angular: "vanilla",
+  node: "node",
 };
 
 const ERROR_LIGHTER_TEMPLATES: Record<string, string> = {
@@ -73,6 +75,47 @@ const WebContainerPreview = ({
   const [setupError, setSetupError] = useState<string | null>(null);
   const terminalRef = useRef<any>(null);
 
+  const handleCommandComplete = useCallback(async (command: string, exitCode: number) => {
+    const parts = command.trim().split(/\s+/);
+    const isInstallCmd = parts[0] === "npm" && ["install", "i", "add"].includes(parts[1]);
+
+    if (isInstallCmd && exitCode === 0 && instance) {
+      try {
+        const pkgJsonContent = await instance.fs.readFile("/package.json", "utf-8");
+
+        const store = useFileExplorer.getState();
+        const currentData = store.templateData;
+        if (!currentData) return;
+
+        const updated = JSON.parse(JSON.stringify(currentData)) as TemplateFolder;
+
+        const findAndUpdate = (items: any[]): boolean => {
+          for (const item of items) {
+            if ("filename" in item && item.filename === "package" && item.fileExtension === "json") {
+              item.content = pkgJsonContent;
+              return true;
+            }
+            if ("items" in item) {
+              if (findAndUpdate(item.items)) return true;
+            }
+          }
+          return false;
+        };
+
+        if (findAndUpdate(updated.items)) {
+          store.setTemplateData(updated);
+
+          const packageFile = store.openFiles.find((f) => f.id === "package.json");
+          if (packageFile) {
+            store.updateFileContent("package.json", pkgJsonContent);
+          }
+        }
+      } catch (err) {
+        console.error("Failed to refresh package.json after npm install:", err);
+      }
+    }
+  }, [instance]);
+
   const templateId = detectTemplateId(templateData);
 
   const {
@@ -80,6 +123,7 @@ const WebContainerPreview = ({
     isReady,
     isError,
     retry,
+    previewUrl: bootPreviewUrl,
   } = useProjectBoot({
     instance,
     templateId: templateId as any,
@@ -103,10 +147,10 @@ const WebContainerPreview = ({
   }, [bootState.phase, bootState.message]);
 
   useEffect(() => {
-    if (bootState.phase === "ready") {
-      setPreviewUrl("ready");
+    if (bootState.phase === "ready" && bootPreviewUrl) {
+      setPreviewUrl(bootPreviewUrl);
     }
-  }, [bootState.phase]);
+  }, [bootState.phase, bootPreviewUrl]);
 
   useEffect(() => {
     if (bootState.phase === "error" && bootState.error) {
@@ -229,20 +273,23 @@ const WebContainerPreview = ({
               webContainerInstance={instance}
               theme="dark"
               className="h-full rounded-2xl"
+              onCommandComplete={handleCommandComplete}
             />
           </div>
         </div>
       ) : (
         <div className="h-full flex flex-col">
-          <div className="flex-1 relative bg-white">
-            <iframe
-              src={previewUrl}
-              className="w-full h-full border-none"
-              title="WebContainer Preview"
-            />
-          </div>
+          {previewUrl && (
+            <div className="flex-1 relative bg-white">
+              <iframe
+                src={previewUrl}
+                className="w-full h-full border-none"
+                title="WebContainer Preview"
+              />
+            </div>
+          )}
 
-          <div className="h-64 border-t border-[rgba(0,212,255,0.1)] bg-[#020B1F]/80 p-2 relative">
+          <div className={`${previewUrl ? "h-64 border-t" : "flex-1"} border-[rgba(0,212,255,0.1)] bg-[#020B1F]/80 p-2 relative`}>
             <div className="absolute top-2.5 right-4 z-10 flex items-center gap-1.5">
               <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse shadow-[0_0_8px_rgba(34,197,94,0.8)]" />
               <span className="text-[9px] font-bold text-[#7ca8cc] font-jetbrains uppercase tracking-widest">WebContainer Terminal</span>
@@ -252,6 +299,7 @@ const WebContainerPreview = ({
               webContainerInstance={instance}
               theme="dark"
               className="h-full rounded-xl overflow-hidden"
+              onCommandComplete={handleCommandComplete}
             />
           </div>
         </div>

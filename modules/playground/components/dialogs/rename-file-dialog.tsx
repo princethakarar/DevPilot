@@ -41,8 +41,8 @@ function RenameFileDialog({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (filename.trim()) {
-      onRename(filename.trim(), extension.trim() || currentExtension);
+    if (filename && filename.trim()) {
+      onRename(filename.trim(), (extension && extension.trim()) || currentExtension);
     }
   };
 
@@ -83,7 +83,7 @@ function RenameFileDialog({
             <Button type="button" variant="outline" onClick={onClose}>
               Cancel
             </Button>
-            <Button type="submit" disabled={!filename.trim()}>
+            <Button type="submit" disabled={!filename || !filename.trim()}>
               Rename
             </Button>
           </DialogFooter>

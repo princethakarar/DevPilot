@@ -62,12 +62,13 @@ enum Templates {
   VUE
   HONO
   ANGULAR
+  NODE
 }
 model Playground {
   id  String @id @default(cuid()) @map("_id")
   title  String
   description String?
-  template   Templates  @default(REACT)
+  template   Templates  @default(NODE)
   githubRepo       String?   // "owner/repo" format
   githubBranch     String?   // branch name
   githubBaseContent String?  // JSON snapshot of original file tree for diff calculation

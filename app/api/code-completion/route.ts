@@ -32,6 +32,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    if (fileContent.length > 100000) {
+      return NextResponse.json(
+        { error: "File too large for code completion" },
+        { status: 413 }
+      );
+    }
+
     const context = analyzeCodeContext(
       fileContent,
       cursorLine,

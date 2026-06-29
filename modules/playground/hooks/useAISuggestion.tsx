@@ -1,4 +1,5 @@
 import { useState, useCallback } from "react";
+import { toast } from "sonner";
 
 interface AISuggestionsState {
     suggestion: string | null;
@@ -115,8 +116,9 @@ export const useAISuggestions = (): UseAISuggestionsReturn => {
                         } else {
                             setState((prev) => ({ ...prev, isLoading: false }));
                         }
-                    } catch (error) {
+                    } catch (error: any) {
                         console.error("Error fetching code suggestion:", error);
+                        toast.error(error.message || "Failed to fetch AI suggestion");
                         setState((prev) => ({ ...prev, isLoading: false }));
                     }
                 })();

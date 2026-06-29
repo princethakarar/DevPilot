@@ -5,4 +5,5 @@ export const templatePaths = {
   VUE: "/vibecode-starters/vue",
   HONO: "/vibecode-starters/hono-nodejs-starter",
   ANGULAR: "/vibecode-starters/angular",
+  NODE: "/vibecode-starters/node",
 };

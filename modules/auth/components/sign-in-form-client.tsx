@@ -3,21 +3,12 @@
 import React from "react";
 import Image from "next/image";
 import { signIn } from "next-auth/react";
-<<<<<<< HEAD
-import { useSearchParams } from "next/navigation";
-
-const SignInFormClient = () => {
-  const searchParams = useSearchParams();
-  const callbackUrl = searchParams.get("callbackUrl") || "/dashboard";
-=======
-
 import { useSearchParams } from "next/navigation";
 import { DEFAULT_LOGIN_REDIRECT } from "@/routes";
 
 const SignInFormClient = () => {
   const searchParams = useSearchParams();
   const callbackUrl = searchParams.get("callbackUrl") || DEFAULT_LOGIN_REDIRECT;
->>>>>>> 260d150 (web container running slow)
 
   function handleGoogleSignIn(e: React.MouseEvent) {
     e.preventDefault();

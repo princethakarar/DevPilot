@@ -112,6 +112,11 @@ export async function bootProject(options: BootOptions): Promise<BootResult> {
     flags: string[],
     strategy: RetryStrategy
   ): Promise<{ devServerUrl: string }> {
+    if (templateId === "node") {
+      emit("ready", 100, "Terminal Ready!");
+      return { devServerUrl: "" };
+    }
+
     const outputAccumulator: string[] = [];
     let detectedError = false;
 

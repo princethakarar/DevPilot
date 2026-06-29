@@ -59,7 +59,7 @@ export default async function RootLayout({
       style={{ colorScheme }}
     >
       <body className="min-h-full flex flex-col">
-        <SessionProvider session={session}>
+        <SessionProvider session={session} refetchOnWindowFocus={false} refetchInterval={5 * 60}>
           <ThemeProvider
             attribute="class"
             defaultTheme="system"

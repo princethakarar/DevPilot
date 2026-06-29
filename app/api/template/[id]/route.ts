@@ -22,7 +22,7 @@ export async function GET(
 
 const {id} = await params;
 
-if(!id || id === "undefined"){
+if(!id || id === "undefined" || id === "ready"){
       return Response.json({ error: "Missing playground ID" }, { status: 400 });
 }
 
@@ -36,6 +36,30 @@ const playground = await db.playground.findUnique({
   
   const templateKey = playground.template as keyof typeof templatePaths;
   const templatePath = templatePaths[templateKey]
+
+    if (templateKey === "NODE") {
+      const nodeTemplate = {
+        folderName: "node",
+        items: [
+          {
+            filename: "package",
+            fileExtension: "json",
+            content: "{\n  \"name\": \"project-name\",\n  \"version\": \"1.0.0\",\n  \"description\": \"\",\n  \"main\": \"index.js\",\n  \"scripts\": {\n    \"test\": \"echo \\\"Error: no test specified\\\" && exit 1\"\n  },\n  \"keywords\": [],\n  \"author\": \"\",\n  \"license\": \"ISC\"\n}"
+          },
+          {
+            filename: "index",
+            fileExtension: "js",
+            content: "// Welcome to your Node.js project!\nconsole.log('Hello, Node.js!');\n"
+          },
+          {
+            filename: ".gitignore",
+            fileExtension: "",
+            content: "node_modules/\n.env\n"
+          }
+        ]
+      };
+      return Response.json({ success: true, templateJson: nodeTemplate }, { status: 200 });
+    }
 
     if (!templatePath) {
     return Response.json({ error: "Invalid template" }, { status: 404 });

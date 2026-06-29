@@ -36,6 +36,7 @@ import { findFilePath } from "@/modules/playground/lib";
 import {
   TemplateFile,
   TemplateFolder,
+  TemplateItem,
 } from "@/modules/playground/lib/path-to-json";
 import WebContainerPreview from "@/modules/webcontainers/components/webcontainer-preview";
 import { useWebContainer } from "@/modules/webcontainers/hooks/useWebContainer";
@@ -178,6 +179,67 @@ const MainPlaygroundPage = () => {
     [handleRenameFolder, saveTemplateData]
   );
 
+  const handleSyncFromTerminal = useCallback(async () => {
+    if (!instance || !templateData) {
+      toast.error("WebContainer or template data not ready");
+      return;
+    }
+
+    try {
+      const ignoredFolders = new Set(["node_modules", ".next", ".git"]);
+      
+      const readDirectory = async (dirPath: string): Promise<TemplateItem[]> => {
+        const items: TemplateItem[] = [];
+        const entries = await instance.fs.readdir(dirPath, { withFileTypes: true });
+        
+        for (const entry of entries) {
+          if (ignoredFolders.has(entry.name)) continue;
+          
+          const fullPath = dirPath === "" ? entry.name : `${dirPath}/${entry.name}`;
+          
+          if (entry.isDirectory()) {
+            const children = await readDirectory(fullPath);
+            items.push({
+              folderName: entry.name,
+              items: children
+            });
+          } else if (entry.isFile()) {
+            try {
+              const content = await instance.fs.readFile(fullPath, "utf-8");
+              const lastDotIndex = entry.name.lastIndexOf('.');
+              const filename = lastDotIndex !== -1 ? entry.name.slice(0, lastDotIndex) : entry.name;
+              const fileExtension = lastDotIndex !== -1 ? entry.name.slice(lastDotIndex + 1) : "";
+              
+              items.push({
+                filename,
+                fileExtension,
+                content
+              });
+            } catch (e) {
+              console.warn(`Skipping binary or unreadable file: ${fullPath}`);
+            }
+          }
+        }
+        return items;
+      };
+
+      toast.info("Syncing files from terminal...");
+      const rootItems = await readDirectory("");
+      
+      const newTemplateData: TemplateFolder = {
+        folderName: "Root",
+        items: rootItems
+      };
+
+      const updated = await saveTemplateData(newTemplateData);
+      setTemplateData(updated || newTemplateData);
+      toast.success("Files synced successfully!");
+    } catch (error) {
+      console.error("Failed to sync from terminal:", error);
+      toast.error("Failed to sync files from terminal");
+    }
+  }, [instance, templateData, saveTemplateData, setTemplateData]);
+
   const activeFile = openFiles.find((file) => file.id === activeFileId);
   const hasUnsavedChanges = openFiles.some((file) => file.hasUnsavedChanges);
 
@@ -302,8 +364,8 @@ const MainPlaygroundPage = () => {
      return () => window.removeEventListener("keydown", handleKeyDown);
   },[handleSave]);
 
-  // Guard: id not yet resolved from route params
-  if (!id || id === "undefined") {
+  // Guard: id not yet resolved from route params or invalid placeholder
+  if (!id || id === "undefined" || id === "ready") {
     return (
       <div className="flex flex-col items-center justify-center h-screen w-full bg-[#080C18]">
         <div className="w-full max-w-sm bg-[#0D1221] border border-[#1E2D45] rounded-lg p-6">
@@ -390,6 +452,7 @@ const MainPlaygroundPage = () => {
           onDeleteFolder={wrappedHandleDeleteFolder}
           onRenameFile={wrappedHandleRenameFile}
           onRenameFolder={wrappedHandleRenameFolder}
+          onRefresh={handleSyncFromTerminal}
         />
         <SidebarInset className="relative flex flex-col bg-[#080C18] text-[#E2EAF4] border-l border-[#1E2D45]">
           {/* Subtle grid background and glowing ambient orbs */}
@@ -508,8 +571,9 @@ const MainPlaygroundPage = () => {
               />
             ) : (
               <>
-                {openFiles.length > 0 ? (
-                  <div className="h-full flex flex-col">                    <div className="border-b border-[#1E2D45] bg-[#080C18] px-4 pt-2">
+                <div className="h-full flex flex-col">
+                  {openFiles.length > 0 && (
+                    <div className="border-b border-[#1E2D45] bg-[#080C18] px-4 pt-2">
                       <Tabs
                         value={activeFileId || ""}
                         onValueChange={setActiveFileId}
@@ -565,30 +629,43 @@ const MainPlaygroundPage = () => {
                         </div>
                       </Tabs>
                     </div>
-                    <div className="flex-1 bg-[rgba(2,11,31,0.2)]">
+                  )}
+                  <div className="flex-1 bg-[rgba(2,11,31,0.2)]">
                       <ResizablePanelGroup
                         direction="horizontal"
                         className="h-full"
                       >
                         <ResizablePanel defaultSize={isPreviewVisible ? 50 : 100} className="relative">
-                          <PlaygroundEditor
-                            activeFile={activeFile}
-                            content={activeFile?.content || ""}
-                            onContentChange={(value) => 
-                              activeFileId && updateFileContent(activeFileId , value)
-                            }
-                            suggestion={aiSuggestions.suggestion}
-                            suggestionLoading={aiSuggestions.isLoading}
-                            suggestionPosition={aiSuggestions.position}
-                            onAcceptSuggestion={(editor , monaco)=>aiSuggestions.acceptSuggestion(editor , monaco)}
-                            onRejectSuggestion={(editor) =>
-                              aiSuggestions.rejectSuggestion(editor)
-                            }
-                            onTriggerSuggestion={(type, editor) =>
-                              aiSuggestions.fetchSuggestion(type, editor)
-                            }
-                            highlightCurrentLine={highlightCurrentLine}
-                          />
+                          {openFiles.length > 0 ? (
+                            <PlaygroundEditor
+                              activeFile={activeFile}
+                              content={activeFile?.content || ""}
+                              onContentChange={(value) => 
+                                activeFileId && updateFileContent(activeFileId , value)
+                              }
+                              suggestion={aiSuggestions.suggestion}
+                              suggestionLoading={aiSuggestions.isLoading}
+                              suggestionPosition={aiSuggestions.position}
+                              onAcceptSuggestion={(editor , monaco)=>aiSuggestions.acceptSuggestion(editor , monaco)}
+                              onRejectSuggestion={(editor) =>
+                                aiSuggestions.rejectSuggestion(editor)
+                              }
+                              onTriggerSuggestion={(type, editor) =>
+                                aiSuggestions.fetchSuggestion(type, editor)
+                              }
+                              highlightCurrentLine={highlightCurrentLine}
+                            />
+                          ) : (
+                            <div className="h-full w-full flex flex-col items-center justify-center text-muted-foreground gap-4">
+                              <FileText className="h-16 w-16 text-[#1E2D45]" />
+                              <div className="text-center">
+                                <p className="text-lg font-medium text-[#A5B8CC]">No files open</p>
+                                <p className="text-sm text-[#6B8CAE]">
+                                  Select a file from the sidebar to start editing
+                                </p>
+                              </div>
+                            </div>
+                          )}
                         </ResizablePanel>
 
                         {isPreviewVisible && (
@@ -610,17 +687,6 @@ const MainPlaygroundPage = () => {
                       </ResizablePanelGroup>
                     </div>
                   </div>
-                ) : (
-                  <div className="h-full w-full flex flex-col items-center justify-center text-muted-foreground gap-4">
-                    <FileText className="h-16 w-16 text-gray-300" />
-                    <div className="text-center">
-                      <p className="text-lg font-medium">No files open</p>
-                      <p className="text-sm text-gray-500">
-                        Select a file from the sidebar to start editing
-                      </p>
-                    </div>
-                  </div>
-                )}
               </>
             )}
           </div>
