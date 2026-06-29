@@ -154,14 +154,14 @@ export default function OpenRepoDialog({ isOpen, onClose }: OpenRepoDialogProps)
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="sm:max-w-[560px] p-0 bg-[#071428] border border-[rgba(0,180,255,0.2)] text-[#e8f4ff] rounded-2xl shadow-[0_20px_60px_rgba(0,0,0,0.6)] overflow-hidden">
+      <DialogContent className="w-[95vw] max-w-[560px] p-0 bg-[#071428] border border-[rgba(0,180,255,0.2)] text-[#e8f4ff] rounded-2xl shadow-[0_20px_60px_rgba(0,0,0,0.6)] overflow-hidden">
         {/* Header */}
-        <div className="relative px-6 pt-6 pb-4 border-b border-[rgba(0,180,255,0.08)]">
+        <div className="relative px-4 sm:px-6 pt-5 sm:pt-6 pb-4 border-b border-[rgba(0,180,255,0.08)]">
           <div className="absolute inset-0 bg-gradient-to-b from-[rgba(168,85,247,0.06)] to-transparent pointer-events-none" />
           <DialogHeader className="relative">
-            <DialogTitle className="text-xl font-bold text-white flex items-center gap-2.5">
-              <div className="w-9 h-9 rounded-lg bg-[rgba(168,85,247,0.15)] border border-[rgba(168,85,247,0.25)] flex items-center justify-center">
-                <FolderGit2 className="w-4.5 h-4.5 text-[#a67bd4]" />
+            <DialogTitle className="text-lg sm:text-xl font-bold text-white flex items-center gap-2 sm:gap-2.5">
+              <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-lg bg-[rgba(168,85,247,0.15)] border border-[rgba(168,85,247,0.25)] flex items-center justify-center">
+                <FolderGit2 className="w-4 sm:w-4.5 h-4 sm:h-4.5 text-[#a67bd4]" />
               </div>
               Open GitHub Repository
             </DialogTitle>
@@ -172,10 +172,10 @@ export default function OpenRepoDialog({ isOpen, onClose }: OpenRepoDialogProps)
         </div>
 
         {/* Content */}
-        <div className="px-6 py-4 min-h-[300px]">
+        <div className="px-4 sm:px-6 py-4 min-h-[250px] sm:min-h-[300px] min-w-0 overflow-hidden">
           {/* Checking state */}
           {step === "checking" && (
-            <div className="flex flex-col items-center justify-center h-[280px] gap-3">
+            <div className="flex flex-col items-center justify-center h-[200px] sm:h-[280px] gap-3">
               <Loader2 className="h-8 w-8 text-[#00b4ff] animate-spin" />
               <p className="text-sm text-[#7ca8cc] font-jetbrains">
                 Checking GitHub connection...
@@ -185,7 +185,7 @@ export default function OpenRepoDialog({ isOpen, onClose }: OpenRepoDialogProps)
 
           {/* Link GitHub state */}
           {step === "link" && (
-            <div className="flex flex-col items-center justify-center h-[280px] gap-5">
+            <div className="flex flex-col items-center justify-center h-[260px] sm:h-[280px] gap-5">
               <div className="w-16 h-16 rounded-2xl bg-[rgba(168,85,247,0.1)] border border-[rgba(168,85,247,0.2)] flex items-center justify-center">
                 <GithubIcon className="w-8 h-8 text-[#a67bd4]" />
               </div>
@@ -193,15 +193,15 @@ export default function OpenRepoDialog({ isOpen, onClose }: OpenRepoDialogProps)
                 <h3 className="text-lg font-semibold text-white">
                   Link Your GitHub Account
                 </h3>
-                <p className="text-sm text-[#7ca8cc] max-w-[360px]">
+                <p className="text-xs sm:text-sm text-[#7ca8cc] max-w-[320px] sm:max-w-[360px]">
                   To access your repositories, you need to link your GitHub account. This grants DevPilot permission to read and write to your repos.
                 </p>
               </div>
               <Button
                 onClick={handleSyncGithub}
-                className="bg-[#24292e] hover:bg-[#2f363d] text-white px-6 py-2.5 rounded-xl flex items-center gap-2.5 text-sm font-semibold border border-[rgba(255,255,255,0.1)] shadow-[0_4px_15px_rgba(0,0,0,0.3)] transition-all duration-300 hover:shadow-[0_6px_20px_rgba(0,0,0,0.4)] cursor-pointer"
+                className="bg-[#24292e] hover:bg-[#2f363d] text-white px-5 sm:px-6 py-2 sm:py-2.5 rounded-xl flex items-center gap-2 sm:gap-2.5 text-xs sm:text-sm font-semibold border border-[rgba(255,255,255,0.1)] shadow-[0_4px_15px_rgba(0,0,0,0.3)] transition-all duration-300 hover:shadow-[0_6px_20px_rgba(0,0,0,0.4)] cursor-pointer"
               >
-                <GithubIcon className="w-4.5 h-4.5" />
+                <GithubIcon className="w-4 sm:w-4.5 h-4 sm:h-4.5" />
                 Sync GitHub Account
               </Button>
             </div>
@@ -209,20 +209,20 @@ export default function OpenRepoDialog({ isOpen, onClose }: OpenRepoDialogProps)
 
           {/* Repository selection */}
           {step === "repos" && (
-            <div className="space-y-4">
+            <div className="space-y-4 min-w-0 overflow-hidden">
               {/* Search */}
               <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#3a6080]" />
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 sm:w-4 h-3.5 sm:h-4 text-[#3a6080]" />
                 <Input
                   placeholder="Search repositories..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-10 h-10 bg-[rgba(0,0,0,0.3)] border border-[rgba(0,180,255,0.15)] text-[#e8f4ff] rounded-xl font-jetbrains text-[13px] placeholder:text-[#3a6080] focus-visible:ring-0 focus-visible:ring-offset-0 focus:border-[rgba(0,180,255,0.4)]"
+                  className="pl-9 sm:pl-10 h-9 sm:h-10 bg-[rgba(0,0,0,0.3)] border border-[rgba(0,180,255,0.15)] text-[#e8f4ff] rounded-xl font-jetbrains text-[12px] sm:text-[13px] placeholder:text-[#3a6080] focus-visible:ring-0 focus-visible:ring-offset-0 focus:border-[rgba(0,180,255,0.4)]"
                 />
               </div>
 
               {/* Repo list */}
-              <div className="max-h-[200px] overflow-y-auto space-y-1 pr-1 custom-scrollbar">
+              <div className="max-h-[200px] w-full overflow-y-auto overflow-x-hidden space-y-1 pr-1 custom-scrollbar">
                 {loadingRepos ? (
                   <div className="flex items-center justify-center py-8">
                     <Loader2 className="h-6 w-6 text-[#00b4ff] animate-spin" />
@@ -233,10 +233,18 @@ export default function OpenRepoDialog({ isOpen, onClose }: OpenRepoDialogProps)
                   </div>
                 ) : (
                   filteredRepos.map((repo) => (
-                    <button
+                    <div
                       key={repo.full_name}
                       onClick={() => handleSelectRepo(repo.full_name)}
-                      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left transition-all duration-200 cursor-pointer ${
+                      role="button"
+                      tabIndex={0}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          handleSelectRepo(repo.full_name);
+                        }
+                      }}
+                      className={`w-full min-w-0 overflow-hidden flex items-center gap-2 sm:gap-3 px-2 sm:px-3 py-2 sm:py-2.5 rounded-lg text-left transition-all duration-200 cursor-pointer ${
                         selectedRepo === repo.full_name
                           ? "bg-[rgba(0,180,255,0.1)] border border-[rgba(0,180,255,0.3)]"
                           : "hover:bg-[rgba(0,180,255,0.04)] border border-transparent"
@@ -262,7 +270,7 @@ export default function OpenRepoDialog({ isOpen, onClose }: OpenRepoDialogProps)
                       {selectedRepo === repo.full_name && (
                         <Check className="w-4 h-4 text-[#00b4ff] shrink-0" />
                       )}
-                    </button>
+                    </div>
                   ))
                 )}
               </div>
@@ -282,13 +290,13 @@ export default function OpenRepoDialog({ isOpen, onClose }: OpenRepoDialogProps)
                     <div className="relative">
                       <button
                         onClick={() => setShowBranchDropdown(!showBranchDropdown)}
-                        className="w-full flex items-center justify-between h-10 px-3 bg-[rgba(0,0,0,0.3)] border border-[rgba(0,180,255,0.15)] rounded-xl text-[13px] font-jetbrains text-[#e8f4ff] hover:border-[rgba(0,180,255,0.3)] transition-colors cursor-pointer"
+                        className="w-full flex items-center justify-between h-9 sm:h-10 px-2 sm:px-3 bg-[rgba(0,0,0,0.3)] border border-[rgba(0,180,255,0.15)] rounded-xl text-[12px] sm:text-[13px] font-jetbrains text-[#e8f4ff] hover:border-[rgba(0,180,255,0.3)] transition-colors cursor-pointer"
                       >
                         <div className="flex items-center gap-2">
                           <GitBranch className="w-3.5 h-3.5 text-[#00b4ff]" />
-                          <span>{selectedBranch}</span>
+                          <span className="truncate max-w-[100px] sm:max-w-[200px] md:max-w-[300px]">{selectedBranch}</span>
                           {selectedBranch === defaultBranch && (
-                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-[rgba(0,180,255,0.1)] text-[#00b4ff] border border-[rgba(0,180,255,0.2)]">
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-[rgba(0,180,255,0.1)] text-[#00b4ff] border border-[rgba(0,180,255,0.2)] shrink-0">
                               default
                             </span>
                           )}
@@ -331,7 +339,7 @@ export default function OpenRepoDialog({ isOpen, onClose }: OpenRepoDialogProps)
 
           {/* Importing state */}
           {step === "importing" && (
-            <div className="flex flex-col items-center justify-center h-[280px] gap-4">
+            <div className="flex flex-col items-center justify-center h-[240px] sm:h-[280px] gap-4">
               <div className="relative">
                 <div className="w-16 h-16 rounded-2xl bg-[rgba(0,180,255,0.1)] border border-[rgba(0,180,255,0.2)] flex items-center justify-center">
                   <Loader2 className="w-8 h-8 text-[#00b4ff] animate-spin" />
@@ -353,27 +361,27 @@ export default function OpenRepoDialog({ isOpen, onClose }: OpenRepoDialogProps)
 
         {/* Footer */}
         {step === "repos" && (
-          <DialogFooter className="px-6 py-4 border-t border-[rgba(0,180,255,0.08)] bg-[rgba(5,13,26,0.3)]">
+          <DialogFooter className="m-0 px-4 sm:px-6 py-3 sm:py-4 border-t border-[rgba(0,180,255,0.08)] bg-[rgba(5,13,26,0.3)]">
             <Button
               variant="outline"
               onClick={onClose}
-              className="border border-[rgba(0,180,255,0.15)] bg-transparent text-[#7ca8cc] hover:bg-[rgba(0,180,255,0.08)] hover:text-white font-jetbrains text-[13px] rounded-xl cursor-pointer"
+              className="border border-[rgba(0,180,255,0.15)] bg-transparent text-[#7ca8cc] hover:bg-[rgba(0,180,255,0.08)] hover:text-white font-jetbrains text-[12px] sm:text-[13px] rounded-xl cursor-pointer"
             >
               Cancel
             </Button>
             <Button
               onClick={handleImport}
               disabled={!selectedRepo || !selectedBranch || importing}
-              className="bg-gradient-to-r from-[#6d28d9] to-[#a855f7] hover:from-[#5b21b6] hover:to-[#9333ea] text-white font-jetbrains text-[13px] rounded-xl shadow-[0_4px_15px_rgba(168,85,247,0.25)] disabled:opacity-40 cursor-pointer"
+              className="bg-gradient-to-r from-[#6d28d9] to-[#a855f7] hover:from-[#5b21b6] hover:to-[#9333ea] text-white font-jetbrains text-[12px] sm:text-[13px] rounded-xl shadow-[0_4px_15px_rgba(168,85,247,0.25)] disabled:opacity-40 cursor-pointer"
             >
               {importing ? (
                 <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  <Loader2 className="w-3.5 sm:w-4 h-3.5 sm:h-4 mr-1.5 sm:mr-2 animate-spin" />
                   Importing...
                 </>
               ) : (
                 <>
-                  <FolderGit2 className="w-4 h-4 mr-2" />
+                  <FolderGit2 className="w-3.5 sm:w-4 h-3.5 sm:h-4 mr-1.5 sm:mr-2" />
                   Open Repository
                 </>
               )}
