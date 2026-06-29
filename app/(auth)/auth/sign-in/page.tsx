@@ -3,7 +3,11 @@ import React, { Suspense } from 'react'
 
 const Page = () => {
   return (
+<<<<<<< HEAD
     <Suspense>
+=======
+    <Suspense fallback={<div className="flex justify-center items-center h-full"><span className="text-white">Loading...</span></div>}>
+>>>>>>> 260d150 (web container running slow)
       <SignInFormClient />
     </Suspense>
   )

@@ -1,7 +1,4 @@
-import {
-  readTemplateStructureFromJson,
-  saveTemplateStructureToJson,
-} from "@/modules/playground/lib/path-to-json";
+import { scanTemplateDirectory } from "@/modules/playground/lib/path-to-json";
 import { db } from "@/lib/db";
 import { templatePaths } from "@/lib/template";
 import path from "path";
@@ -45,20 +42,14 @@ const playground = await db.playground.findUnique({
   }
 
   try {
-    const inputPath = path.join(process.cwd() , templatePath);
-    const outputFile = path.join(process.cwd() , `output/${templateKey}.json`);
+    const inputPath = path.join(/*turbopackIgnore: true*/ process.cwd() , templatePath);
 
-    await saveTemplateStructureToJson(inputPath , outputFile);
-    const result = await readTemplateStructureFromJson(outputFile);
-
+    const result = await scanTemplateDirectory(inputPath);
 
     // Validate the JSON structure before saving
     if (!validateJsonStructure(result.items)) {
       return Response.json({ error: "Invalid JSON structure" }, { status: 500 });
     }
-
-    await fs.unlink(outputFile)
-
 
       return Response.json({ success: true, templateJson: result }, { status: 200 });
   } catch (error) {
