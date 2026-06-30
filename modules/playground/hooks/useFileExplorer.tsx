@@ -10,6 +10,7 @@ interface OpenFile extends TemplateFile {
   hasUnsavedChanges: boolean;
   content: string;
   originalContent: string;
+  isPreview?: boolean;
 }
 
 interface FileExplorerState {
@@ -27,7 +28,8 @@ interface FileExplorerState {
   setActiveFileId: (fileId: string | null) => void;
 
   //   Functions
-  openFile: (file: TemplateFile) => void;
+  openFile: (file: TemplateFile, isPreview?: boolean) => void;
+  pinFile: (fileId: string) => void;
   closeFile: (fileId: string) => void;
   closeAllFiles: () => void;
 
@@ -90,12 +92,16 @@ export const useFileExplorer = create<FileExplorerState>((set, get) => ({
   setOpenFiles: (files) => set({ openFiles: files }),
   setActiveFileId: (fileId) => set({ activeFileId: fileId }),
 
-  openFile: (file) => {
+  openFile: (file, isPreview = true) => {
     const fileId = generateFileId(file, get().templateData!);
     const { openFiles } = get();
     const existingFile = openFiles.find((f) => f.id === fileId);
 
     if (existingFile) {
+      if (!isPreview && existingFile.isPreview) {
+        // Pin the file if opened without preview flag
+        get().pinFile(fileId);
+      }
       set({ activeFileId: fileId, editorContent: existingFile.content });
       return;
     }
@@ -106,12 +112,35 @@ export const useFileExplorer = create<FileExplorerState>((set, get) => ({
       hasUnsavedChanges: false,
       content: file.content || "",
       originalContent: file.content || "",
+      isPreview,
     };
 
+    let nextOpenFiles = [...openFiles];
+    
+    // If opening as preview, replace the existing preview tab
+    if (isPreview) {
+      const existingPreviewIndex = nextOpenFiles.findIndex(f => f.isPreview);
+      if (existingPreviewIndex !== -1) {
+        nextOpenFiles[existingPreviewIndex] = newOpenFile;
+      } else {
+        nextOpenFiles.push(newOpenFile);
+      }
+    } else {
+      nextOpenFiles.push(newOpenFile);
+    }
+
     set((state) => ({
-      openFiles: [...state.openFiles, newOpenFile],
+      openFiles: nextOpenFiles,
       activeFileId: fileId,
       editorContent: file.content || "",
+    }));
+  },
+
+  pinFile: (fileId) => {
+    set((state) => ({
+      openFiles: state.openFiles.map(f => 
+        f.id === fileId ? { ...f, isPreview: false } : f
+      )
     }));
   },
 
@@ -456,6 +485,7 @@ export const useFileExplorer = create<FileExplorerState>((set, get) => ({
               ...file,
               content,
               hasUnsavedChanges: content !== file.originalContent,
+              isPreview: false, // Editing pins the file
             }
           : file
       ),
