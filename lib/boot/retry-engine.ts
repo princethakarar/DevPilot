@@ -22,23 +22,23 @@ interface StrategyConfig {
 
 const STRATEGIES: Record<RetryStrategy, StrategyConfig> = {
   normal: {
-    flags: ["--no-audit", "--no-fund", "--prefer-offline"],
+    flags: ["--no-audit", "--no-fund", "--prefer-offline", "--no-progress", "--maxsockets=1", "--loglevel=error"],
     label: "Normal install",
   },
   "legacy-peers": {
-    flags: ["--no-audit", "--no-fund", "--prefer-offline", "--legacy-peer-deps"],
+    flags: ["--no-audit", "--no-fund", "--prefer-offline", "--legacy-peer-deps", "--no-progress", "--maxsockets=1", "--loglevel=error"],
     label: "Legacy peer deps mode",
   },
   force: {
-    flags: ["--no-audit", "--no-fund", "--force"],
+    flags: ["--no-audit", "--no-fund", "--force", "--no-progress", "--maxsockets=1", "--loglevel=error"],
     label: "Force mode",
   },
   "no-optional": {
-    flags: ["--no-audit", "--no-fund", "--prefer-offline", "--no-optional"],
+    flags: ["--no-audit", "--no-fund", "--prefer-offline", "--no-optional", "--no-progress", "--maxsockets=1", "--loglevel=error"],
     label: "Skipping optional deps",
   },
   "ignore-scripts": {
-    flags: ["--no-audit", "--no-fund", "--prefer-offline", "--ignore-scripts"],
+    flags: ["--no-audit", "--no-fund", "--prefer-offline", "--ignore-scripts", "--no-progress", "--maxsockets=1", "--loglevel=error"],
     label: "Skipping install scripts",
   },
 };
@@ -50,10 +50,24 @@ const STRATEGY_PROGRESSION: { errorPattern: string; switchTo: RetryStrategy }[] 
   { errorPattern: "ENOSPC", switchTo: "no-optional" },
   { errorPattern: "Cannot find module", switchTo: "force" },
   { errorPattern: "exit code 1", switchTo: "legacy-peers" },
+  // exit 143 = SIGTERM (OOM kill by the WASM sandbox). Switch to no-optional
+  // to reduce the package count and memory footprint on the next attempt.
+  { errorPattern: "exit 143", switchTo: "no-optional" },
+  { errorPattern: "exit code 143", switchTo: "no-optional" },
+  { errorPattern: "SIGTERM", switchTo: "no-optional" },
 ];
 
-export function getRetryDelay(attempt: number, baseDelayMs: number): number {
-  return Math.min(Math.max(1000, baseDelayMs * Math.pow(2, attempt - 1)), 10_000);
+export function getRetryDelay(attempt: number, baseDelayMs: number, error?: string): number {
+  // OOM/SIGTERM (exit 143) needs 3 s+ for the WASM sandbox to reclaim memory.
+  // For all other errors (ERESOLVE, network, etc.) 1 s is sufficient.
+  const isOom = error && (
+    error.includes("143") ||
+    error.includes("SIGTERM") ||
+    error.includes("killed") ||
+    error.includes("memory")
+  );
+  const floor = isOom ? 3000 : 1000;
+  return Math.min(Math.max(floor, baseDelayMs * Math.pow(2, attempt - 1)), 15_000);
 }
 
 export function selectStrategy(
@@ -96,7 +110,6 @@ export async function withSmartRetry<T>(
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     if (attempt > 0) {
       currentStrategy = selectStrategy(lastError, currentStrategy, attempt);
-      const delayMs = getRetryDelay(attempt, baseDelayMs);
 
       onRetry(attempt, lastError, currentStrategy);
 
@@ -104,7 +117,10 @@ export async function withSmartRetry<T>(
         await teardown();
       }
 
-      // Additional settle time for WebContainer process registry to clear
+      // Additional settle time for WebContainer process registry to clear.
+      // Delay is error-aware: OOM/SIGTERM needs 3 s+ for WASM memory reclaim;
+      // other errors only need 1 s.
+      const delayMs = getRetryDelay(attempt, baseDelayMs, lastError);
       await new Promise((resolve) => setTimeout(resolve, Math.max(500, delayMs)));
     }
 

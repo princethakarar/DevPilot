@@ -5,7 +5,7 @@ import { transformToWebContainerFormat } from "@/modules/webcontainers/hooks/tra
 import { verifyInstall, checkForPartialInstall } from "./boot/install-verifier";
 import { detectInstallErrors, parseInstallProgress, classifyExitCode } from "./boot/error-detector";
 import { withSmartRetry, BootRetryExhaustedError, type RetryStrategy } from "./boot/retry-engine";
-import { cleanupWebContainer, trackProcess, untrackProcess, verifyServerResponds } from "./boot/process-cleanup";
+import { cleanupWebContainer, trackProcess, untrackProcess } from "./boot/process-cleanup";
 
 export interface BootState {
   phase: BootPhase;
@@ -280,16 +280,10 @@ export async function bootProject(options: BootOptions): Promise<BootResult> {
       });
     });
 
-    emit("starting-server", 90, "Verifying dev server health...");
-
-    const isResponding = await verifyServerResponds(previewUrl, 5_000);
-    if (!isResponding) {
-      const retryResponse = await verifyServerResponds(previewUrl, 10_000);
-      if (!retryResponse) {
-        throw new Error("Dev server started but is not responding to requests");
-      }
-    }
-
+    // server-ready is the authoritative WebContainer signal that the dev server
+    // is listening on its port. A cross-origin HEAD fetch (verifyServerResponds)
+    // is redundant here and is always blocked by COEP (require-corp) because the
+    // WebContainer proxy URL returns no CORS/CORP headers. Skip the health check.
     untrackProcess("dev-server");
 
     return { devServerUrl: previewUrl };

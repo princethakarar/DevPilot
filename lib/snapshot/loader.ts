@@ -246,11 +246,18 @@ export async function fallbackToNpmInstall(
   flags?: string[],
   signal?: AbortSignal
 ): Promise<SnapshotLoadResult> {
+  // Use minimal flags to keep memory/network pressure low inside the WASM sandbox.
+  // --maxsockets=1 limits concurrent connections, --no-progress disables the
+  // progress bar writes (reduces stdout I/O), --loglevel=error suppresses verbose
+  // output that costs memory. These are the primary defences against SIGTERM (143).
   const installFlags = flags?.length ? flags : [
     "install",
     "--no-audit",
     "--no-fund",
     "--prefer-offline",
+    "--no-progress",
+    "--loglevel=error",
+    "--maxsockets=1",
   ];
 
   onProgress(createProgress("installing", "Installing dependencies via npm..."));
@@ -260,6 +267,22 @@ export async function fallbackToNpmInstall(
   }
 
   try {
+    // Write a .npmrc before spawning npm to enforce low concurrency at the npm
+    // config level. This applies even to npm's internal resolution network calls
+    // which are not controlled by the CLI flags alone.
+    try {
+      const npmrc = [
+        "fetch-retries=1",
+        "fetch-timeout=60000",
+        "maxsockets=1",
+        "progress=false",
+        "loglevel=error",
+      ].join("\n");
+      await instance.fs.writeFile("/.npmrc", npmrc);
+    } catch {
+      // Non-fatal — continue even if .npmrc write fails
+    }
+
     const installProcess = await instance.spawn("npm", installFlags);
 
     trackProcess("npm-install", installProcess, `npm ${installFlags.join(" ")}`);

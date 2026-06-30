@@ -4,7 +4,8 @@ export type TemplateId =
   | "vue"
   | "svelte"
   | "vanilla"
-  | "astro";
+  | "astro"
+  | "node";
 
 export interface SnapshotManifest {
   template: TemplateId;

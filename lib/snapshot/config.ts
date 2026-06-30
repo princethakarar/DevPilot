@@ -9,6 +9,7 @@ export const TEMPLATE_SNAPSHOT_HASHES: Record<TemplateId, string> = {
   svelte: "",
   vanilla: "",
   astro: "",
+  node: "",
 };
 
 export const TEMPLATE_DEPENDENCY_PROFILES: Record<TemplateId, TemplateDependencyProfile> = {
@@ -65,6 +66,15 @@ export const TEMPLATE_DEPENDENCY_PROFILES: Record<TemplateId, TemplateDependency
     installTime: "slow",
     hasNativeBinaries: false,
     estimatedSnapshotLoadMs: 3500,
+  },
+  node: {
+    template: "node",
+    totalDeps: 0,
+    nodeModulesSize: 0,
+    compressedSize: 0,
+    installTime: "fast",
+    hasNativeBinaries: false,
+    estimatedSnapshotLoadMs: 0,
   },
 };
 

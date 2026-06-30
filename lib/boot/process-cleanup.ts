@@ -128,15 +128,21 @@ export async function verifyServerResponds(
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
-    const response = await fetch(url, {
+    // Use no-cors: WebContainer proxy URLs are cross-origin and return neither
+    // Access-Control-Allow-Origin nor Cross-Origin-Resource-Policy headers.
+    // In a COEP (require-corp) isolated context a cors-mode fetch is always
+    // blocked by the browser even when the server is up. With no-cors the
+    // response is opaque (type="opaque", status=0) but a non-throwing fetch
+    // means the network layer reached the server — which is all we need.
+    await fetch(url, {
       method: "HEAD",
       signal: controller.signal,
-      mode: "cors",
+      mode: "no-cors",
     });
 
     clearTimeout(timeout);
-    return response.ok || response.status === 304;
+    return true; // opaque response = server accepted the connection
   } catch {
-    return false;
+    return false; // TypeError "Failed to fetch" = server not reachable
   }
 }

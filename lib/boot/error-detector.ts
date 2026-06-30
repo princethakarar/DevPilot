@@ -187,6 +187,18 @@ export function classifyExitCode(
     };
   }
 
+  // exit 143 = SIGTERM — the WebContainer WASM sandbox killed the process due to
+  // memory or time limits. This is NOT a dependency conflict; switching npm flags
+  // doesn't help. The best strategy is to retry with --no-optional to reduce the
+  // package count and lower the peak memory footprint.
+  if (code === 143) {
+    return {
+      suggestedAction: "retry:no-optional",
+      userMessage: "The install was stopped by the environment (memory pressure). Retrying with a smaller package set.",
+      isTerminal: false,
+    };
+  }
+
   return {
     suggestedAction: `retry:normal`,
     userMessage: `Process exited with code ${code}`,

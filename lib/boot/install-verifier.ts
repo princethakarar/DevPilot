@@ -99,8 +99,15 @@ export async function verifyInstall(
       : { success: false, checks, reason: "No dependencies declared and node_modules is empty" };
   }
 
+  // Sample instead of checking every dep: read the first 8 (installed first by
+  // npm, most likely to be present or missing) and the last 2 (catch truncated
+  // installs). This avoids N sequential async VFS reads for large dep sets.
+  const head = declaredDeps.slice(0, 8);
+  const tail = declaredDeps.slice(-2).filter((p) => !head.includes(p));
+  const sample = [...head, ...tail];
+
   let foundCount = 0;
-  for (const pkg of declaredDeps) {
+  for (const pkg of sample) {
     const exists = await packageExists(instance, pkg);
     if (exists) {
       foundCount++;
