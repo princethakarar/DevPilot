@@ -4,6 +4,7 @@ import React, { useEffect, useState, useRef } from "react";
 import { Lock, RefreshCw, ExternalLink, Globe } from "lucide-react";
 import { useIdeLayout } from "../hooks/useIdeLayout";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 
 interface IdePreviewProps {
   instance: any;
@@ -87,31 +88,31 @@ export function IdePreview({ instance }: IdePreviewProps) {
   };
 
   return (
-    <div className="flex flex-col h-full bg-white rounded-md overflow-hidden shadow-sm border border-gray-200">
+    <div className="flex flex-col h-full bg-background overflow-hidden font-sans">
       {/* Browser Address Bar */}
-      <div className="flex items-center gap-2 px-3 py-2 bg-[#f3f4f6] border-b border-gray-200">
+      <div className="flex items-center gap-2 px-3 h-9 shrink-0 bg-sidebar border-b border-border">
         <div className="flex items-center gap-1 shrink-0">
           <Button
             variant="ghost"
-            size="sm"
-            className="h-7 w-7 p-0 text-gray-500 hover:bg-gray-200 rounded-md"
+            size="icon"
+            className="h-6 w-6 text-foreground/70 hover:bg-sidebar-accent hover:text-foreground rounded-md"
             onClick={handleRefresh}
             disabled={!currentUrl}
           >
-            <RefreshCw className="h-3.5 w-3.5" />
+            <RefreshCw className="h-3 w-3" />
           </Button>
         </div>
 
         <form 
           onSubmit={handleNavigate}
-          className="flex-1 flex items-center bg-white rounded-md border border-gray-300 h-7 px-2 overflow-hidden shadow-inner"
+          className="flex-1 flex items-center bg-background rounded-md border border-border h-[26px] px-2 overflow-hidden focus-within:ring-1 focus-within:ring-ring transition-all"
         >
-          <Lock className="h-3 w-3 text-gray-400 mr-2 shrink-0" />
+          <Lock className="h-3 w-3 text-foreground/70 mr-2 shrink-0" />
           <input
             type="text"
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
-            className="flex-1 bg-transparent text-[13px] outline-none text-gray-700 font-sans"
+            className="flex-1 bg-transparent text-[11px] outline-none text-foreground font-mono"
             placeholder="No server running"
           />
         </form>
@@ -119,8 +120,8 @@ export function IdePreview({ instance }: IdePreviewProps) {
         <div className="flex items-center shrink-0">
           <Button
             variant="ghost"
-            size="sm"
-            className="h-7 w-7 p-0 text-gray-500 hover:bg-gray-200 rounded-md"
+            size="icon"
+            className="h-6 w-6 text-foreground/70 hover:bg-sidebar-accent hover:text-foreground rounded-md"
             onClick={handleOpenExternal}
             disabled={!currentUrl}
           >
@@ -130,21 +131,22 @@ export function IdePreview({ instance }: IdePreviewProps) {
       </div>
 
       {/* Iframe content */}
-      <div className="flex-1 bg-white relative">
+      <div className="flex-1 bg-background relative">
         {currentUrl ? (
           <iframe
             ref={iframeRef}
             src={currentUrl}
-            className="w-full h-full border-none"
+            className="w-full h-full border-none bg-white"
             sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals"
             allow="cross-origin-isolated"
           />
         ) : (
-          <div className="absolute inset-0 flex flex-col items-center justify-center text-gray-400">
+          <div className="absolute inset-0 flex flex-col items-center justify-center text-foreground/70 bg-background">
             <Globe className="h-16 w-16 mb-4 opacity-20" />
-            <p className="text-sm font-medium text-gray-500">Preview not available</p>
-            <p className="text-xs mt-2 text-gray-400 max-w-[250px] text-center">
-              Run <code className="bg-gray-100 px-1 py-0.5 rounded text-gray-600 font-mono">npm run dev</code> in the terminal to start the server.
+            <p className="text-sm font-semibold text-foreground">Preview not available</p>
+            <p className="text-xs mt-2 text-foreground/70 max-w-[250px] text-center flex flex-col items-center gap-2">
+              <span>Run the dev server to preview.</span>
+              <Badge variant="outline" className="font-mono text-foreground/70 rounded-md bg-foreground/5 border-foreground/20">npm run dev</Badge>
             </p>
           </div>
         )}

@@ -65,15 +65,24 @@ export function IdeTerminal({ instance }: IdeTerminalProps) {
   const setupTerminal = async (id: string, container: HTMLDivElement) => {
     if (!instance || terminals.current[id]) return;
 
+    // Use computed styles to fetch current theme colors for xterm
+    const computed = window.getComputedStyle(document.body);
+    const getVar = (name: string) => {
+      const val = computed.getPropertyValue(name).trim();
+      // xterm.js doesn't natively parse oklch() for theme properties yet,
+      // so we use transparency and rely on the container's bg/text colors where possible,
+      // but we'll supply basic fallbacks if needed.
+      return val; 
+    };
+
     const term = new Terminal({
       cursorBlink: true,
-      fontFamily: '"JetBrains Mono", "Fira Code", "Consolas", monospace',
+      fontFamily: 'var(--font-mono), monospace',
       fontSize: 13,
       lineHeight: 1.2,
+      allowTransparency: true,
       theme: {
-        background: "#1e1e1e",
-        foreground: "#d4d4d8",
-        cursor: "#d4d4d8",
+        background: "transparent",
       },
     });
 
@@ -173,19 +182,19 @@ export function IdeTerminal({ instance }: IdeTerminalProps) {
   }, [activeTabId]);
 
   return (
-    <div className="flex flex-col h-full bg-[#1e1e1e] border-t border-[#2d2d2d] overflow-hidden">
+    <div className="flex flex-col h-full bg-background border-t border-border overflow-hidden font-sans">
       {/* Terminal Header */}
-      <div className="flex h-9 bg-[#1e1e1e] items-center justify-between pr-2">
+      <div className="flex h-9 bg-sidebar items-center justify-between pr-2">
         <div className="flex h-full">
           {tabs.map((tab) => (
             <div
               key={tab.id}
               onClick={() => setActiveTabId(tab.id)}
               className={cn(
-                "group relative flex items-center h-full px-3 gap-2 min-w-[120px] max-w-[200px] cursor-pointer",
+                "group relative flex items-center h-full px-3 gap-2 min-w-[120px] max-w-[200px] cursor-pointer transition-colors",
                 activeTabId === tab.id
-                  ? "bg-[#1e1e1e] text-[#e2eaf4] border-t border-t-[#38bdf8]"
-                  : "bg-[#1e1e1e] text-[#969696] hover:text-[#d4d4d8] border-t border-transparent"
+                  ? "bg-background text-foreground border-t-2 border-t-primary"
+                  : "bg-sidebar text-foreground/70 hover:text-foreground hover:bg-sidebar-accent/50 border-t-2 border-transparent"
               )}
             >
               <TerminalIcon className="h-3.5 w-3.5 shrink-0" />
@@ -194,7 +203,7 @@ export function IdeTerminal({ instance }: IdeTerminalProps) {
               </span>
               <button
                 onClick={(e) => handleCloseTab(tab.id, e)}
-                className="w-5 h-5 rounded hover:bg-[#333333] flex items-center justify-center opacity-0 group-hover:opacity-100 text-[#969696] hover:text-white transition-colors"
+                className="w-5 h-5 rounded hover:bg-foreground/20 flex items-center justify-center opacity-0 group-hover:opacity-100 text-foreground/70 hover:text-foreground transition-colors"
               >
                 <X className="w-3.5 h-3.5" />
               </button>
@@ -202,7 +211,7 @@ export function IdeTerminal({ instance }: IdeTerminalProps) {
           ))}
           <button
             onClick={handleAddTab}
-            className="w-8 h-8 flex items-center justify-center text-[#969696] hover:text-white transition-colors"
+            className="w-8 h-8 flex items-center justify-center text-foreground/70 hover:text-foreground hover:bg-sidebar-accent/50 rounded transition-colors ml-1"
           >
             <Plus className="w-4 h-4" />
           </button>
@@ -212,7 +221,7 @@ export function IdeTerminal({ instance }: IdeTerminalProps) {
           <button
             onClick={handleClearActive}
             title="Clear Terminal"
-            className="w-7 h-7 rounded hover:bg-[#333333] flex items-center justify-center text-[#969696] hover:text-white transition-colors"
+            className="w-7 h-7 rounded hover:bg-sidebar-accent/50 flex items-center justify-center text-foreground/70 hover:text-foreground transition-colors"
           >
             <Trash2 className="w-4 h-4" />
           </button>
@@ -220,7 +229,7 @@ export function IdeTerminal({ instance }: IdeTerminalProps) {
       </div>
 
       {/* Terminal Viewports */}
-      <div className="flex-1 relative bg-[#1e1e1e] p-2">
+      <div className="flex-1 relative min-h-0 bg-background p-2">
         {tabs.map((tab) => (
           <div
             key={tab.id}
