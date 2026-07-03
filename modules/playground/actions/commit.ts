@@ -1,12 +1,50 @@
 "use server";
 
+import ignore from "ignore";
 import { db } from "@/lib/db";
 import { currentUser } from "@/modules/auth/actions";
+import type { TemplateFolder } from "../lib/path-to-json";
+import { setFileContentAtPath, removeItemAtPath } from "../lib";
 
 interface FileChange {
   path: string;
   content: string;
   status: "modified" | "added" | "deleted";
+}
+
+/**
+ * Builds a gitignore matcher from the project's own root-level .gitignore file
+ * content (if present), so Source Control tracks changes exactly the way
+ * `git status` would — ignored files (.env, etc.) never show up as changes and
+ * are never committed/pushed. Only the root .gitignore is honored (no nested
+ * per-directory .gitignore support, mirroring git's directory-scoped semantics
+ * would require much more machinery than this DB-backed tree model has).
+ */
+function getIgnoreMatcher(tree: TemplateFolder | null): ReturnType<typeof ignore> | null {
+  if (!tree?.items) return null;
+  const gitignoreFile = tree.items.find(
+    (item): item is { filename: string; fileExtension: string; content: string } =>
+      "filename" in item && item.filename === ".gitignore" && item.fileExtension === ""
+  );
+  if (!gitignoreFile?.content) return null;
+
+  try {
+    return ignore().add(gitignoreFile.content);
+  } catch {
+    return null;
+  }
+}
+
+function filterIgnored(
+  files: Map<string, string>,
+  matcher: ReturnType<typeof ignore> | null
+): Map<string, string> {
+  if (!matcher) return files;
+  const filtered = new Map<string, string>();
+  for (const [path, content] of files) {
+    if (!matcher.ignores(path)) filtered.set(path, content);
+  }
+  return filtered;
 }
 
 /**
@@ -94,8 +132,12 @@ export async function commitChangesToGithub(
       : currentContent;
     const baseTree = baseContent ? JSON.parse(baseContent) : null;
 
-    const currentFiles = flattenTemplateFolder(currentTree);
-    const baseFiles = baseTree ? flattenTemplateFolder(baseTree) : new Map<string, string>();
+    const matcher = getIgnoreMatcher(currentTree);
+    const currentFiles = filterIgnored(flattenTemplateFolder(currentTree), matcher);
+    const baseFiles = filterIgnored(
+      baseTree ? flattenTemplateFolder(baseTree) : new Map<string, string>(),
+      matcher
+    );
     const changes = calculateChanges(baseFiles, currentFiles);
 
     if (changes.length === 0) {
@@ -321,8 +363,12 @@ export async function getPlaygroundChangesList(
       : currentContent;
     const baseTree = baseContent ? JSON.parse(baseContent) : null;
 
-    const currentFiles = flattenTemplateFolder(currentTree);
-    const baseFiles = baseTree ? flattenTemplateFolder(baseTree) : new Map<string, string>();
+    const matcher = getIgnoreMatcher(currentTree);
+    const currentFiles = filterIgnored(flattenTemplateFolder(currentTree), matcher);
+    const baseFiles = filterIgnored(
+      baseTree ? flattenTemplateFolder(baseTree) : new Map<string, string>(),
+      matcher
+    );
     const changes = calculateChanges(baseFiles, currentFiles);
 
     return {
@@ -331,5 +377,70 @@ export async function getPlaygroundChangesList(
   } catch (error) {
     console.error("Error getting changes list:", error);
     return { changes: [], error: "Failed to get changes list" };
+  }
+}
+
+/**
+ * Discards local changes to a single tracked file, resetting it to exactly the
+ * content last synced from GitHub (equivalent to `git checkout -- <file>`).
+ * An "added" file (no base counterpart) is removed entirely; a "deleted" file
+ * (present in base, absent from current) is restored. Only ever touches the
+ * one file at `filePath` — every other file's content is untouched.
+ */
+export async function discardFileChanges(
+  playgroundId: string,
+  filePath: string
+): Promise<{
+  success: boolean;
+  newTemplateData?: TemplateFolder;
+  resultingContent?: string | null;
+  error?: string;
+}> {
+  try {
+    const user = await currentUser();
+    if (!user?.id) return { success: false, error: "Not authenticated" };
+
+    const playground = await db.playground.findUnique({
+      where: { id: playgroundId },
+      include: { templateFiles: { select: { content: true } } },
+    });
+
+    if (!playground) return { success: false, error: "Playground not found" };
+    if (playground.userId !== user.id) return { success: false, error: "Unauthorized" };
+
+    const currentContent = playground.templateFiles[0]?.content;
+    if (!currentContent) return { success: false, error: "No file content found" };
+
+    const currentTree: TemplateFolder =
+      typeof currentContent === "string" ? JSON.parse(currentContent) : currentContent;
+    const baseContent = playground.githubBaseContent;
+    const baseTree: TemplateFolder | null = baseContent ? JSON.parse(baseContent) : null;
+
+    const matcher = getIgnoreMatcher(currentTree);
+    if (matcher?.ignores(filePath)) {
+      return { success: false, error: "File is ignored and has no tracked changes to discard" };
+    }
+
+    const baseFiles = baseTree ? flattenTemplateFolder(baseTree) : new Map<string, string>();
+    const baseFileContent = baseFiles.get(filePath);
+
+    const newTree =
+      baseFileContent === undefined
+        ? removeItemAtPath(currentTree, filePath) // was "added" — discard = remove entirely
+        : setFileContentAtPath(currentTree, filePath, baseFileContent); // "modified"/"deleted" — restore
+
+    await db.templateFile.update({
+      where: { playgroundId },
+      data: { content: JSON.stringify(newTree) },
+    });
+
+    return {
+      success: true,
+      newTemplateData: newTree,
+      resultingContent: baseFileContent ?? null,
+    };
+  } catch (error) {
+    console.error("Error discarding file changes:", error);
+    return { success: false, error: "Failed to discard changes" };
   }
 }

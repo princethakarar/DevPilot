@@ -85,7 +85,8 @@ export const usePlayground = (id: string): UsePlaygroundReturn => {
     try {
           await SaveUpdatedCode(id, data);
       setTemplateData(data);
-      toast.success("Changes saved successfully");
+      // No success toast here — callers show their own contextual toast (or
+      // stay silent for autosave); this fires far too often once autosave is on.
     } catch (error) {
          console.error("Error saving template data:", error);
       toast.error("Failed to save changes");

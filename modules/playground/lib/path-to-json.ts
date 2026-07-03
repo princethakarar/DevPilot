@@ -67,9 +67,13 @@ export async function scanTemplateDirectory(
       'yarn.lock',
       '.DS_Store',
       'thumbs.db',
-      '.gitignore',
       '.npmrc',
       '.yarnrc',
+      // .env-family files are deliberately excluded from freshly-scanned templates
+      // (never given to a new playground) so no committable, GitHub-pushable copy
+      // of example secrets ever gets created. .gitignore itself carries no secrets
+      // and is kept — the Source Control panel's ignore-matching depends on it
+      // actually being present in the tree.
       '.env',
       '.env.local',
       '.env.development',

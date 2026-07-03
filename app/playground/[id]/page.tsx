@@ -24,7 +24,7 @@ import { useAISuggestions } from "@/modules/playground/hooks/useAISuggestion";
 
 import { useFileExplorer } from "@/modules/playground/hooks/useFileExplorer";
 import { usePlayground } from "@/modules/playground/hooks/usePlayground";
-import { findFilePath } from "@/modules/playground/lib";
+import { getFileDisplayName, updateFileContentAtPath } from "@/modules/playground/lib";
 import { IdeLayout } from "@/modules/webcontainers/components/ide-layout";
 import { useWebContainer } from "@/modules/webcontainers/hooks/useWebContainer";
 import { transformToWebContainerFormat } from "@/modules/webcontainers/hooks/transformer";
@@ -32,7 +32,9 @@ import {
   AlertCircle,
   FolderOpen,
 } from "lucide-react";
-import CommitDialog from "@/modules/playground/components/dialogs/commit-dialog";
+import { SourceControlPanel } from "@/modules/playground/components/source-control-panel";
+import { useSourceControl } from "@/modules/playground/hooks/useSourceControl";
+import { useNodeModulesPersistence } from "@/modules/webcontainers/hooks/useNodeModulesPersistence";
 import { useParams } from "next/navigation";
 import React, {
   useCallback,
@@ -47,7 +49,6 @@ const MainPlaygroundPage = () => {
   const { id } = useParams<{ id: string }>();
   const [isPreviewVisible, setIsPreviewVisible] = useState(true);
   const [isChatOpen, setIsChatOpen] = useState(false);
-  const [isCommitDialogOpen, setIsCommitDialogOpen] = useState(false);
   const [highlightCurrentLine, setHighlightCurrentLine] = useState(true);
 
   const { playgroundData, templateData, isLoading, error, saveTemplateData } =
@@ -96,15 +97,31 @@ const MainPlaygroundPage = () => {
   }, [templateData, setTemplateData]);
 
   const hasMounted = useRef(false);
+  const [filesMounted, setFilesMounted] = useState(false);
   useEffect(() => {
     if (instance && templateData && !hasMounted.current) {
       hasMounted.current = true;
       const files = transformToWebContainerFormat(templateData);
       instance.mount(files).then(() => {
         console.log("Initial files mounted to WebContainer");
+        setFilesMounted(true);
       });
     }
   }, [instance, templateData]);
+
+  // Wait until the project's own files are mounted before attempting to restore
+  // a cached node_modules snapshot, so it doesn't race WebContainer's own mount().
+  useNodeModulesPersistence(instance, id, filesMounted ? templateData : null);
+
+  // Single source of truth for Source Control's changed-file state — both the
+  // rail badge and the panel's list read from this store, refreshed here
+  // whenever the tree changes (i.e. after any save), so the badge stays live
+  // even while the Source Control panel itself isn't open.
+  const hasGithubRepo = !!(playgroundData?.githubRepo && playgroundData?.githubBranch);
+  useEffect(() => {
+    useSourceControl.getState().setHasGithubRepo(hasGithubRepo);
+    useSourceControl.getState().refreshChanges(id);
+  }, [id, hasGithubRepo, templateData]);
 
   // Create wrapper functions that pass saveTemplateData
   const wrappedHandleAddFile = useCallback(
@@ -239,122 +256,116 @@ const MainPlaygroundPage = () => {
     openFile(file);
   };
 
-  const handleSave = useCallback(
-    async (fileId?: string) => {
-      const targetFileId = fileId || activeFileId;
-      if (!targetFileId) return;
+  // Saves one or more open files: writes each straight to the WebContainer FS
+  // (fast, local — no deep clone of the whole tree) and only then does the one
+  // expensive part, the full-tree DB persist, exactly ONCE for the whole batch.
+  // Previously each file's save deep-cloned + rewrote the entire project tree
+  // AND fired its own separate DB upsert of the whole tree, which is why saving
+  // multiple dirty files (e.g. handleSaveAll) could race — concurrent upserts
+  // built from slightly-stale snapshots could silently clobber each other.
+  //
+  // Filenames are matched by each open file's own `id` (its exact path), not by
+  // name alone — fixes content silently landing in the wrong file whenever two
+  // files share a name in different folders (a real, reproducible failure mode
+  // for dotfiles like ".env", which projects commonly duplicate per-package).
+  const saveFiles = useCallback(
+    async (fileIds?: string[], options?: { silent?: boolean }) => {
+      const latestOpenFiles = useFileExplorer.getState().openFiles;
+      const targetIds =
+        fileIds ?? latestOpenFiles.filter((f) => f.hasUnsavedChanges).map((f) => f.id);
+      if (targetIds.length === 0) return;
 
-      const fileToSave = openFiles.find((f) => f.id === targetFileId);
+      let workingTemplateData = useFileExplorer.getState().templateData;
+      if (!workingTemplateData) return;
 
-      if (!fileToSave) return;
+      const savedFiles: typeof latestOpenFiles = [];
 
-      const latestTemplateData = useFileExplorer.getState().templateData;
-      if (!latestTemplateData) return
+      for (const fid of targetIds) {
+        const file = latestOpenFiles.find((f) => f.id === fid);
+        if (!file || !file.hasUnsavedChanges) continue;
+
+        try {
+          if (writeFileSync) {
+            await writeFileSync(file.id, file.content);
+            lastSyncedContent.current.set(file.id, file.content);
+          }
+          workingTemplateData = updateFileContentAtPath(workingTemplateData, file.id, file.content);
+          savedFiles.push(file);
+        } catch (error) {
+          console.error("Error saving file:", error);
+          toast.error(`Failed to save ${getFileDisplayName(file.filename, file.fileExtension)}`);
+        }
+      }
+
+      if (savedFiles.length === 0) return;
+
+      const savedIds = new Set(savedFiles.map((f) => f.id));
+      setOpenFiles(
+        useFileExplorer.getState().openFiles.map((f) =>
+          savedIds.has(f.id) ? { ...f, originalContent: f.content, hasUnsavedChanges: false } : f
+        )
+      );
+      setTemplateData(workingTemplateData);
 
       try {
-            const filePath = findFilePath(fileToSave, latestTemplateData);
-        if (!filePath) {
-          toast.error(
-            `Could not find path for file: ${fileToSave.filename}.${fileToSave.fileExtension}`
+        // saveTemplateData's own resolved value is always undefined (it never
+        // returns the row) — it updates its own internal state as a side effect.
+        await saveTemplateData(workingTemplateData);
+        if (!options?.silent) {
+          toast.success(
+            savedFiles.length === 1
+              ? `Saved ${getFileDisplayName(savedFiles[0].filename, savedFiles[0].fileExtension)}`
+              : `Saved ${savedFiles.length} files`
           );
-          return;
         }
-
-   const updatedTemplateData = JSON.parse(
-          JSON.stringify(latestTemplateData)
-        );
-
-        // @ts-ignore
-          const updateFileContent = (items: any[]) =>
-            // @ts-ignore
-          items.map((item) => {
-            if ("folderName" in item) {
-              return { ...item, items: updateFileContent(item.items) };
-            } else if (
-              item.filename === fileToSave.filename &&
-              item.fileExtension === fileToSave.fileExtension
-            ) {
-              return { ...item, content: fileToSave.content };
-            }
-            return item;
-          });
-        updatedTemplateData.items = updateFileContent(
-          updatedTemplateData.items
-        );
-
-          // Sync with WebContainer
-        if (writeFileSync) {
-          await writeFileSync(filePath, fileToSave.content);
-          lastSyncedContent.current.set(fileToSave.id, fileToSave.content);
-          if (instance && instance.fs) {
-            await instance.fs.writeFile(filePath, fileToSave.content);
-          }
-        }
-
-           const newTemplateData = await saveTemplateData(updatedTemplateData);
-        setTemplateData(newTemplateData || updatedTemplateData);
-// Update open files
-        const updatedOpenFiles = openFiles.map((f) =>
-          f.id === targetFileId
-            ? {
-                ...f,
-                content: fileToSave.content,
-                originalContent: fileToSave.content,
-                hasUnsavedChanges: false,
-              }
-            : f
-        );
-        setOpenFiles(updatedOpenFiles);
-
-    toast.success(
-          `Saved ${fileToSave.filename}.${fileToSave.fileExtension}`
-        );
       } catch (error) {
-         console.error("Error saving file:", error);
-        toast.error(
-          `Failed to save ${fileToSave.filename}.${fileToSave.fileExtension}`
-        );
-        throw error;
+        // usePlayground's saveTemplateData already surfaces its own error toast.
+        console.error("Error persisting to database:", error);
       }
     },
-    [
-      activeFileId,
-      openFiles,
-      writeFileSync,
-      instance,
-      saveTemplateData,
-      setTemplateData,
-      setOpenFiles,
-    ]
+    [writeFileSync, setOpenFiles, setTemplateData, saveTemplateData]
   );
 
-    const handleSaveAll = async () => {
-    const unsavedFiles = openFiles.filter((f) => f.hasUnsavedChanges);
+  // Auto-save: debounce ~1s after the last edit anywhere, then flush every
+  // dirty file in a single batch (see saveFiles). Resets on every keystroke via
+  // the openFiles dependency, so it only actually fires once things go quiet.
+  const autosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    const anyDirty = openFiles.some((f) => f.hasUnsavedChanges);
+    if (!anyDirty) return;
 
-    if (unsavedFiles.length === 0) {
-      toast.info("No unsaved changes");
-      return;
-    }
+    autosaveTimerRef.current = setTimeout(() => {
+      autosaveTimerRef.current = null;
+      saveFiles(undefined, { silent: true });
+    }, 1000);
 
-    try {
-      await Promise.all(unsavedFiles.map((f) => handleSave(f.id)));
-      toast.success(`Saved ${unsavedFiles.length} file(s)`);
-    } catch (error) {
-      toast.error("Failed to save some files");
-    }
-  };
+    return () => {
+      if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
+    };
+  }, [openFiles, saveFiles]);
 
-
-  useEffect(()=>{
-    const handleKeyDown = (e:KeyboardEvent)=>{
-      if(e.ctrlKey && e.key === "s"){
-        e.preventDefault()
-        handleSave()
+  // Manual save (Ctrl+S) is an immediate, forced save of just the active file.
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.ctrlKey && e.key === "s") {
+        e.preventDefault();
+        if (activeFileId) saveFiles([activeFileId]);
       }
-    }
-     window.addEventListener("keydown", handleKeyDown);
-     return () => window.removeEventListener("keydown", handleKeyDown);
-  },[handleSave]);
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [activeFileId, saveFiles]);
+
+  // Flush a specific file immediately (used before switching away from it or
+  // closing it) so unsaved edits are never silently lost.
+  const flushFileIfDirty = useCallback(
+    (fileId: string | null) => {
+      if (!fileId) return;
+      const file = useFileExplorer.getState().openFiles.find((f) => f.id === fileId);
+      if (file?.hasUnsavedChanges) saveFiles([fileId], { silent: true });
+    },
+    [saveFiles]
+  );
 
   // Guard: id not yet resolved from route params or invalid placeholder
   if (!id || id === "undefined" || id === "ready") {
@@ -434,12 +445,24 @@ const MainPlaygroundPage = () => {
     <TooltipProvider>
       <IdeLayout
         instance={instance}
+        projectName={playgroundData?.title || "Playground"}
+        onBeforeFileSelect={flushFileIfDirty}
+        onBeforeFileClose={flushFileIfDirty}
+        sourceControlContent={
+          <SourceControlPanel
+            playgroundId={id}
+            githubRepo={playgroundData?.githubRepo}
+            githubBranch={playgroundData?.githubBranch}
+            instance={instance}
+            writeFileSync={writeFileSync}
+          />
+        }
         explorerContent={
           <TemplateFileTree
             data={templateData}
             onFileSelect={handleFileSelect}
             selectedFile={activeFile}
-            title="File Explorer"
+            title={playgroundData?.title || "Explorer"}
             onAddFile={wrappedHandleAddFile}
             onAddFolder={wrappedHandleAddFolder}
             onDeleteFile={wrappedHandleDeleteFile}
@@ -450,15 +473,6 @@ const MainPlaygroundPage = () => {
           />
         }
       />
-      {playgroundData?.githubRepo && playgroundData?.githubBranch && (
-        <CommitDialog
-          isOpen={isCommitDialogOpen}
-          onClose={() => setIsCommitDialogOpen(false)}
-          playgroundId={id}
-          githubRepo={playgroundData.githubRepo}
-          githubBranch={playgroundData.githubBranch}
-        />
-      )}
     </TooltipProvider>
   );
 };

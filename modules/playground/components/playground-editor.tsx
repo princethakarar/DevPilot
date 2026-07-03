@@ -8,6 +8,11 @@ import { configureMonaco, defaultEditorOptions, getEditorLanguage } from "../lib
 
 interface PlaygroundEditorProps {
   activeFile: TemplateFile | undefined
+  /** The open file's stable unique id (its path). Passed to Monaco as `path` so
+   *  each tab gets its own persistent model — switching tabs swaps models via
+   *  `editor.setModel()` instead of overwriting a single shared model's content
+   *  via `setValue()`, which is what was wiping/corrupting the undo stack. */
+  fileId?: string
   content: string
   onContentChange: (value: string) => void
   suggestion?: string | null
@@ -21,6 +26,7 @@ interface PlaygroundEditorProps {
 
 export const PlaygroundEditor = ({
   activeFile,
+  fileId,
   content,
   onContentChange,
   suggestion,
@@ -574,6 +580,7 @@ export const PlaygroundEditor = ({
 
       <Editor
         height="100%"
+        path={fileId}
         value={content}
         onChange={(value) => onContentChange(value || "")}
         onMount={handleEditorDidMount}

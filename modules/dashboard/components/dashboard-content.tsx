@@ -188,15 +188,15 @@ export default function DashboardContent({ user, projects, onDeleteProject, onUp
 
       <div className="relative z-10 w-full min-h-screen flex flex-col">
         {/* ─── NAVBAR ─── */}
-        <nav className="flex items-center justify-between px-10 h-16 border-b border-[rgba(0,180,255,0.08)] bg-[rgba(5,13,26,0.7)] backdrop-blur-[20px]">
-        <Link href="/" className="flex items-center gap-2.5 no-underline font-montserrat">
-          <Image src="/icon-bg-removed.png" alt="DevPilot" width={40} height={40}  className="object-contain drop-shadow-[0_0_8px_rgba(0,207,255,0.3)]" />
+        <nav className="flex items-center justify-between px-4 sm:px-6 lg:px-10 h-16 border-b border-[rgba(0,180,255,0.08)] bg-[rgba(5,13,26,0.7)] backdrop-blur-[20px]">
+        <Link href="/" className="flex items-center gap-2 sm:gap-2.5 no-underline font-montserrat shrink-0">
+          <Image src="/icon-bg-removed.png" alt="DevPilot" width={40} height={40}  className="object-contain drop-shadow-[0_0_8px_rgba(0,207,255,0.3)] w-8 h-8 sm:w-10 sm:h-10" />
           <div className="flex flex-col leading-none">
             <div className="flex items-baseline">
-              <span className="text-[25px] text-white tracking-tight" style={{ fontWeight: 600 }}>Dev</span>
-              <span className="text-[25px] tracking-tight" style={{ fontWeight: 700, background: "linear-gradient(to right, #00CFFF, #3B82F6, #A855F7)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text" }}>Pilot</span>
+              <span className="text-xl sm:text-[25px] text-white tracking-tight" style={{ fontWeight: 600 }}>Dev</span>
+              <span className="text-xl sm:text-[25px] tracking-tight" style={{ fontWeight: 700, background: "linear-gradient(to right, #00CFFF, #3B82F6, #A855F7)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text" }}>Pilot</span>
             </div>
-            <span className="text-[10px] tracking-[0.25em] uppercase mt-0.5" style={{ color: "#94A3B8", fontWeight: 400 }}>AI POWERED IDE</span>
+            <span className="text-[8px] sm:text-[10px] tracking-[0.2em] sm:tracking-[0.25em] uppercase mt-0.5" style={{ color: "#94A3B8", fontWeight: 400 }}>AI POWERED IDE</span>
           </div>
         </Link>
         <div className="flex items-center">
@@ -339,46 +339,46 @@ export default function DashboardContent({ user, projects, onDeleteProject, onUp
       </nav>
 
       {/* ─── MAIN CONTENT ─── */}
-      <div className="max-w-[1200px] mx-auto px-8 py-8">
+      <div className="max-w-[1200px] mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
 
 
 
         {/* ─── ACTION CARDS ─── */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mb-8">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-5 mb-8">
           {/* New Project */}
           <div
             onClick={() => setIsModalOpen(true)}
-            className="group flex items-center justify-between px-7 py-6 rounded-xl border border-[rgba(0,180,255,0.12)] bg-gradient-to-br from-[rgba(10,31,61,0.7)] to-[rgba(7,20,40,0.9)] cursor-pointer hover:border-[rgba(0,180,255,0.35)] hover:-translate-y-0.5 transition-all duration-300 hover:shadow-[0_8px_30px_rgba(0,180,255,0.1)]"
+            className="group flex items-center justify-between px-4 sm:px-7 py-4 sm:py-6 rounded-xl border border-[rgba(0,180,255,0.12)] bg-gradient-to-br from-[rgba(10,31,61,0.7)] to-[rgba(7,20,40,0.9)] cursor-pointer hover:border-[rgba(0,180,255,0.35)] hover:-translate-y-0.5 transition-all duration-300 hover:shadow-[0_8px_30px_rgba(0,180,255,0.1)]"
           >
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 rounded-xl bg-[rgba(0,180,255,0.1)] border border-[rgba(0,180,255,0.2)] flex items-center justify-center group-hover:shadow-[0_0_20px_rgba(0,180,255,0.2)] transition-shadow">
-                <Plus className="w-6 h-6 text-[#00b4ff]" />
+            <div className="flex items-center gap-3 sm:gap-4">
+              <div className="w-10 h-10 sm:w-12 sm:h-12 shrink-0 rounded-xl bg-[rgba(0,180,255,0.1)] border border-[rgba(0,180,255,0.2)] flex items-center justify-center group-hover:shadow-[0_0_20px_rgba(0,180,255,0.2)] transition-shadow">
+                <Plus className="w-5 h-5 sm:w-6 sm:h-6 text-[#00b4ff]" />
               </div>
               <div>
-                <h3 className="text-[16px] font-bold text-white mb-0.5">New Project</h3>
-                <p className="font-jetbrains text-[12px] text-[#7ca8cc]">Start building instantly with<br/>AI-powered development.</p>
+                <h3 className="text-[14px] sm:text-[16px] font-bold text-white mb-0.5">New Project</h3>
+                <p className="font-jetbrains text-[10px] sm:text-[12px] text-[#7ca8cc]">Start building instantly with<br className="hidden sm:block"/>AI-powered development.</p>
               </div>
             </div>
-            <ArrowRight className="w-5 h-5 text-[#3a6080] group-hover:text-[#00b4ff] group-hover:translate-x-1 transition-all" />
+            <ArrowRight className="w-4 h-4 sm:w-5 sm:h-5 text-[#3a6080] group-hover:text-[#00b4ff] group-hover:translate-x-1 transition-all shrink-0" />
           </div>
 
           {/* Import GitHub */}
           <div
             onClick={() => setIsRepoDialogOpen(true)}
-            className="group flex items-center justify-between px-7 py-6 rounded-xl border border-[rgba(0,180,255,0.12)] bg-gradient-to-br from-[rgba(10,31,61,0.7)] to-[rgba(7,20,40,0.9)] cursor-pointer hover:border-[rgba(0,180,255,0.35)] hover:-translate-y-0.5 transition-all duration-300 hover:shadow-[0_8px_30px_rgba(0,180,255,0.1)]"
+            className="group flex items-center justify-between px-4 sm:px-7 py-4 sm:py-6 rounded-xl border border-[rgba(0,180,255,0.12)] bg-gradient-to-br from-[rgba(10,31,61,0.7)] to-[rgba(7,20,40,0.9)] cursor-pointer hover:border-[rgba(0,180,255,0.35)] hover:-translate-y-0.5 transition-all duration-300 hover:shadow-[0_8px_30px_rgba(0,180,255,0.1)]"
           >
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 rounded-xl bg-[rgba(168,85,247,0.1)] border border-[rgba(168,85,247,0.2)] flex items-center justify-center group-hover:shadow-[0_0_20px_rgba(168,85,247,0.2)] transition-shadow">
-                <svg className="w-6 h-6 text-[#a67bd4]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <div className="flex items-center gap-3 sm:gap-4">
+              <div className="w-10 h-10 sm:w-12 sm:h-12 shrink-0 rounded-xl bg-[rgba(168,85,247,0.1)] border border-[rgba(168,85,247,0.2)] flex items-center justify-center group-hover:shadow-[0_0_20px_rgba(168,85,247,0.2)] transition-shadow">
+                <svg className="w-5 h-5 sm:w-6 sm:h-6 text-[#a67bd4]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22" />
                 </svg>
               </div>
               <div>
-                <h3 className="text-[16px] font-bold text-white mb-0.5">Import GitHub Repository</h3>
-                <p className="font-jetbrains text-[12px] text-[#7ca8cc]">Clone and start coding from<br/>GitHub in seconds.</p>
+                <h3 className="text-[14px] sm:text-[16px] font-bold text-white mb-0.5">Import GitHub Repository</h3>
+                <p className="font-jetbrains text-[10px] sm:text-[12px] text-[#7ca8cc]">Clone and start coding from<br className="hidden sm:block"/>GitHub in seconds.</p>
               </div>
             </div>
-            <ArrowRight className="w-5 h-5 text-[#3a6080] group-hover:text-[#a67bd4] group-hover:translate-x-1 transition-all" />
+            <ArrowRight className="w-4 h-4 sm:w-5 sm:h-5 text-[#3a6080] group-hover:text-[#a67bd4] group-hover:translate-x-1 transition-all shrink-0" />
           </div>
         </div>
 
@@ -388,26 +388,26 @@ export default function DashboardContent({ user, projects, onDeleteProject, onUp
           if (starred.length === 0) return null;
           return (
             <div className="rounded-xl border border-[rgba(0,180,255,0.1)] bg-[rgba(7,17,31,0.5)] overflow-hidden mb-10">
-              <div className="flex items-center justify-between px-6 py-4 border-b border-[rgba(0,180,255,0.08)] bg-[rgba(5,13,26,0.2)]">
-                <h2 className="text-[16px] font-bold text-white flex items-center gap-2">
+              <div className="flex items-center justify-between px-4 sm:px-6 py-4 border-b border-[rgba(0,180,255,0.08)] bg-[rgba(5,13,26,0.2)]">
+                <h2 className="text-base sm:text-[16px] font-bold text-white flex items-center gap-2">
                   <span className="text-[#00CFFF]">★</span> Starred Projects
                 </h2>
               </div>
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead>
+              <div className="w-full">
+                <table className="block md:table w-full">
+                  <thead className="hidden md:table-header-group">
                     <tr className="border-b border-[rgba(0,180,255,0.06)]">
                       {["Project", "Template", "Updated", "Owner", "Actions"].map(h => (
                         <th key={h} className="font-jetbrains text-[11px] text-[#3a6080] uppercase tracking-wider text-left px-6 py-3 font-medium">{h}</th>
                       ))}
                     </tr>
                   </thead>
-                  <tbody>
+                  <tbody className="block md:table-row-group">
                     {starred.map((project) => (
-                      <tr key={project.id} className="border-b border-[rgba(0,180,255,0.04)] hover:bg-[rgba(0,180,255,0.03)] transition-colors">
-                        <td className="px-6 py-4">
-                          <div className="flex items-center gap-3">
-                            <div className="w-9 h-9 rounded-lg flex items-center justify-center bg-[rgba(5,13,26,0.4)] border border-[rgba(0,180,255,0.1)] p-1.5 shadow-[0_0_10px_rgba(0,180,255,0.02)]">
+                      <tr key={project.id} className="flex flex-col md:table-row border-b border-[rgba(0,180,255,0.04)] hover:bg-[rgba(0,180,255,0.03)] transition-colors p-4 md:p-0">
+                        <td className="block md:table-cell px-0 py-2 md:px-6 md:py-4">
+                          <div className="flex items-center gap-3 w-full">
+                            <div className="w-9 h-9 shrink-0 rounded-lg flex items-center justify-center bg-[rgba(5,13,26,0.4)] border border-[rgba(0,180,255,0.1)] p-1.5 shadow-[0_0_10px_rgba(0,180,255,0.02)]">
                               <Image 
                                 src={templateLogos[project.template] || "/react.svg"} 
                                 alt={project.template} 
@@ -416,19 +416,23 @@ export default function DashboardContent({ user, projects, onDeleteProject, onUp
                                 className="object-contain" 
                               />
                             </div>
-                            <div>
-                              <Link href={`/playground/${project.id}`} className="text-[14px] font-semibold text-white hover:text-[#00b4ff] transition-colors">{project.title}</Link>
-                              {project.description && <p className="font-jetbrains text-[11px] text-[#3a6080] line-clamp-1 max-w-[250px]">{project.description}</p>}
+                            <div className="min-w-0 flex-1">
+                              <Link href={`/playground/${project.id}`} className="text-[14px] font-semibold text-white hover:text-[#00b4ff] transition-colors truncate block">{project.title}</Link>
+                              {project.description && <p className="font-jetbrains text-[11px] text-[#3a6080] line-clamp-1 max-w-[250px] md:max-w-none">{project.description}</p>}
                             </div>
                           </div>
                         </td>
-                        <td className="px-6 py-4">
+                        <td className="flex md:table-cell items-center gap-2 px-0 py-1 md:px-6 md:py-4">
+                          <span className="font-jetbrains text-[10px] uppercase text-[#3a6080] md:hidden w-[70px] shrink-0">Template:</span>
                           <span className="font-jetbrains text-[10px] tracking-wider uppercase px-2 py-1 rounded border" style={{ color: templateColors[project.template] || "#00b4ff", borderColor: `${templateColors[project.template] || "#00b4ff"}40`, backgroundColor: `${templateColors[project.template] || "#00b4ff"}10` }}>
                             {project.template}
                           </span>
                         </td>
-                        <td className="px-6 py-4 font-jetbrains text-[12px] text-[#7ca8cc]">{format(new Date(project.createdAt), "MMM dd, yyyy")}</td>
-                        <td className="px-6 py-4">
+                        <td className="flex md:table-cell items-center gap-2 px-0 py-1 md:px-6 md:py-4 font-jetbrains text-[12px] text-[#7ca8cc]">
+                          <span className="font-jetbrains text-[10px] uppercase text-[#3a6080] md:hidden w-[70px] shrink-0">Updated:</span>
+                          {format(new Date(project.createdAt), "MMM dd, yyyy")}
+                        </td>
+                        <td className="hidden md:table-cell px-6 py-4">
                           <div className="flex items-center gap-2">
                             {project.user.image ? (
                               <Image src={project.user.image} alt={project.user.name || "User"} width={24} height={24} className="w-6 h-6 rounded-full border border-[rgba(0,180,255,0.15)]" />
@@ -438,12 +442,12 @@ export default function DashboardContent({ user, projects, onDeleteProject, onUp
                             <span className="font-jetbrains text-[12px] text-[#7ca8cc]">{project.user.name}</span>
                           </div>
                         </td>
-                        <td className="px-6 py-4">
-                          <div className="flex items-center gap-2">
-                            <Link href={`/playground/${project.id}`} className="font-jetbrains text-[12px] text-[#7ca8cc] border border-[rgba(0,180,255,0.15)] rounded-md px-3 py-1 hover:bg-[rgba(0,180,255,0.08)] hover:text-[#00b4ff] hover:border-[rgba(0,180,255,0.3)] transition-all">Open</Link>
+                        <td className="flex md:table-cell items-center px-0 pt-3 pb-1 md:px-6 md:py-4 mt-2 md:mt-0 border-t border-[rgba(0,180,255,0.04)] md:border-0">
+                          <div className="flex items-center gap-2 w-full justify-end md:justify-start">
+                            <Link href={`/playground/${project.id}`} className="font-jetbrains text-[12px] text-[#7ca8cc] border border-[rgba(0,180,255,0.15)] rounded-md px-4 py-2 min-h-[40px] flex items-center justify-center hover:bg-[rgba(0,180,255,0.08)] hover:text-[#00b4ff] hover:border-[rgba(0,180,255,0.3)] transition-all">Open</Link>
                             <DropdownMenu>
                               <DropdownMenuTrigger asChild>
-                                <button className="p-1.5 rounded-md hover:bg-[rgba(0,180,255,0.08)] transition-colors"><MoreHorizontal className="w-4 h-4 text-[#3a6080]" /></button>
+                                <button className="p-2 rounded-md hover:bg-[rgba(0,180,255,0.08)] transition-colors min-w-[40px] min-h-[40px] flex items-center justify-center"><MoreHorizontal className="w-5 h-5 text-[#3a6080]" /></button>
                               </DropdownMenuTrigger>
                               <DropdownMenuContent align="end" className="w-48 bg-[#0a1f3d] border border-[rgba(0,180,255,0.15)] text-[#e8f4ff] font-jetbrains p-1">
                                 <DropdownMenuItem asChild><MarkedToggleButton markedForRevision={project.Starmark[0]?.isMarked} id={project.id} /></DropdownMenuItem>
@@ -470,32 +474,32 @@ export default function DashboardContent({ user, projects, onDeleteProject, onUp
 
         {/* ─── RECENT PROJECTS ─── */}
         <div className="rounded-xl border border-[rgba(0,180,255,0.1)] bg-[rgba(7,17,31,0.5)] overflow-hidden">
-          <div className="flex items-center justify-between px-6 py-4 border-b border-[rgba(0,180,255,0.08)]">
-            <h2 className="text-[16px] font-bold text-white">Recent Projects</h2>
+          <div className="flex items-center justify-between px-4 sm:px-6 py-4 border-b border-[rgba(0,180,255,0.08)]">
+            <h2 className="text-base sm:text-[16px] font-bold text-white">Recent Projects</h2>
           </div>
 
           {projects.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-16">
-              <FolderOpen className="w-12 h-12 text-[#3a6080] mb-4" />
-              <h3 className="text-[16px] font-semibold text-[#7ca8cc] mb-1">No projects found</h3>
-              <p className="font-jetbrains text-[13px] text-[#3a6080]">Create a new project to get started!</p>
+            <div className="flex flex-col items-center justify-center py-16 px-4 text-center">
+              <FolderOpen className="w-10 h-10 sm:w-12 sm:h-12 text-[#3a6080] mb-4" />
+              <h3 className="text-[14px] sm:text-[16px] font-semibold text-[#7ca8cc] mb-1">No projects found</h3>
+              <p className="font-jetbrains text-[11px] sm:text-[13px] text-[#3a6080]">Create a new project to get started!</p>
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead>
+            <div className="w-full">
+              <table className="block md:table w-full">
+                <thead className="hidden md:table-header-group">
                   <tr className="border-b border-[rgba(0,180,255,0.06)]">
                     {["Project", "Template", "Updated", "Owner", "Actions"].map(h => (
                       <th key={h} className="font-jetbrains text-[11px] text-[#3a6080] uppercase tracking-wider text-left px-6 py-3 font-medium">{h}</th>
                     ))}
                   </tr>
                 </thead>
-                <tbody>
+                <tbody className="block md:table-row-group">
                   {projects.map((project) => (
-                    <tr key={project.id} className="border-b border-[rgba(0,180,255,0.04)] hover:bg-[rgba(0,180,255,0.03)] transition-colors">
-                      <td className="px-6 py-4">
-                        <div className="flex items-center gap-3">
-                            <div className="w-9 h-9 rounded-lg flex items-center justify-center bg-[rgba(5,13,26,0.4)] border border-[rgba(0,180,255,0.1)] p-1.5 shadow-[0_0_10px_rgba(0,180,255,0.02)]">
+                    <tr key={project.id} className="flex flex-col md:table-row border-b border-[rgba(0,180,255,0.04)] hover:bg-[rgba(0,180,255,0.03)] transition-colors p-4 md:p-0">
+                      <td className="block md:table-cell px-0 py-2 md:px-6 md:py-4">
+                        <div className="flex items-center gap-3 w-full">
+                            <div className="w-9 h-9 shrink-0 rounded-lg flex items-center justify-center bg-[rgba(5,13,26,0.4)] border border-[rgba(0,180,255,0.1)] p-1.5 shadow-[0_0_10px_rgba(0,180,255,0.02)]">
                               <Image 
                                 src={templateLogos[project.template] || "/react.svg"} 
                                 alt={project.template} 
@@ -504,19 +508,23 @@ export default function DashboardContent({ user, projects, onDeleteProject, onUp
                                 className="object-contain" 
                               />
                             </div>
-                          <div>
-                            <Link href={`/playground/${project.id}`} className="text-[14px] font-semibold text-white hover:text-[#00b4ff] transition-colors">{project.title}</Link>
-                            {project.description && <p className="font-jetbrains text-[11px] text-[#3a6080] line-clamp-1 max-w-[250px]">{project.description}</p>}
+                          <div className="min-w-0 flex-1">
+                            <Link href={`/playground/${project.id}`} className="text-[14px] font-semibold text-white hover:text-[#00b4ff] transition-colors truncate block">{project.title}</Link>
+                            {project.description && <p className="font-jetbrains text-[11px] text-[#3a6080] line-clamp-1 max-w-[250px] md:max-w-none">{project.description}</p>}
                           </div>
                         </div>
                       </td>
-                      <td className="px-6 py-4">
+                      <td className="flex md:table-cell items-center gap-2 px-0 py-1 md:px-6 md:py-4">
+                        <span className="font-jetbrains text-[10px] uppercase text-[#3a6080] md:hidden w-[70px] shrink-0">Template:</span>
                         <span className="font-jetbrains text-[10px] tracking-wider uppercase px-2 py-1 rounded border" style={{ color: templateColors[project.template] || "#00b4ff", borderColor: `${templateColors[project.template] || "#00b4ff"}40`, backgroundColor: `${templateColors[project.template] || "#00b4ff"}10` }}>
                           {project.template}
                         </span>
                       </td>
-                      <td className="px-6 py-4 font-jetbrains text-[12px] text-[#7ca8cc]">{format(new Date(project.createdAt), "MMM dd, yyyy")}</td>
-                      <td className="px-6 py-4">
+                      <td className="flex md:table-cell items-center gap-2 px-0 py-1 md:px-6 md:py-4 font-jetbrains text-[12px] text-[#7ca8cc]">
+                        <span className="font-jetbrains text-[10px] uppercase text-[#3a6080] md:hidden w-[70px] shrink-0">Updated:</span>
+                        {format(new Date(project.createdAt), "MMM dd, yyyy")}
+                      </td>
+                      <td className="hidden md:table-cell px-6 py-4">
                         <div className="flex items-center gap-2">
                           {project.user.image ? (
                             <Image src={project.user.image} alt={project.user.name || "User"} width={24} height={24} className="w-6 h-6 rounded-full border border-[rgba(0,180,255,0.15)]" />
@@ -526,12 +534,12 @@ export default function DashboardContent({ user, projects, onDeleteProject, onUp
                           <span className="font-jetbrains text-[12px] text-[#7ca8cc]">{project.user.name}</span>
                         </div>
                       </td>
-                      <td className="px-6 py-4">
-                        <div className="flex items-center gap-2">
-                          <Link href={`/playground/${project.id}`} className="font-jetbrains text-[12px] text-[#7ca8cc] border border-[rgba(0,180,255,0.15)] rounded-md px-3 py-1 hover:bg-[rgba(0,180,255,0.08)] hover:text-[#00b4ff] hover:border-[rgba(0,180,255,0.3)] transition-all">Open</Link>
+                      <td className="flex md:table-cell items-center px-0 pt-3 pb-1 md:px-6 md:py-4 mt-2 md:mt-0 border-t border-[rgba(0,180,255,0.04)] md:border-0">
+                        <div className="flex items-center gap-2 w-full justify-end md:justify-start">
+                          <Link href={`/playground/${project.id}`} className="font-jetbrains text-[12px] text-[#7ca8cc] border border-[rgba(0,180,255,0.15)] rounded-md px-4 py-2 min-h-[40px] flex items-center justify-center hover:bg-[rgba(0,180,255,0.08)] hover:text-[#00b4ff] hover:border-[rgba(0,180,255,0.3)] transition-all">Open</Link>
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
-                              <button className="p-1.5 rounded-md hover:bg-[rgba(0,180,255,0.08)] transition-colors"><MoreHorizontal className="w-4 h-4 text-[#3a6080]" /></button>
+                              <button className="p-2 rounded-md hover:bg-[rgba(0,180,255,0.08)] transition-colors min-w-[40px] min-h-[40px] flex items-center justify-center"><MoreHorizontal className="w-5 h-5 text-[#3a6080]" /></button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end" className="w-48 bg-[#0a1f3d] border border-[rgba(0,180,255,0.15)] text-[#e8f4ff] font-jetbrains p-1">
                               <DropdownMenuItem asChild><MarkedToggleButton markedForRevision={project.Starmark[0]?.isMarked} id={project.id} /></DropdownMenuItem>

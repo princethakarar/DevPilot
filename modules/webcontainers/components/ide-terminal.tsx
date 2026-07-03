@@ -6,11 +6,10 @@ import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import "@xterm/xterm/css/xterm.css";
 import { cn } from "@/lib/utils";
-import { Terminal as TerminalIcon, Plus, X, Trash2 } from "lucide-react";
-import { useIdeLayout } from "../hooks/useIdeLayout";
-
+import { Terminal as TerminalIcon, Plus, X } from "lucide-react";
 interface IdeTerminalProps {
   instance: any;
+  projectName?: string;
 }
 
 interface TerminalTab {
@@ -18,13 +17,43 @@ interface TerminalTab {
   title: string;
 }
 
-export function IdeTerminal({ instance }: IdeTerminalProps) {
-  const { setDetectedServerUrl } = useIdeLayout();
+/**
+ * Streaming replacer for the WebContainer's generated absolute home path
+ * (e.g. "/home/u0xrvata8m4ov7iu20xphrd61m4sbm-rmmh"), which jsh prints verbatim
+ * in its prompt. Buffers up to `home.length - 1` trailing characters between
+ * chunks so a match split across two writes (e.g. by process.output back-pressure)
+ * is still caught. Display-only: the shell still operates on the real path.
+ */
+function createHomePathFilter(home: string, alias: string) {
+  const maxCarry = home ? home.length - 1 : 0;
+  let carry = "";
+  return {
+    push(chunk: string): string {
+      if (!home) return chunk;
+      const combined = carry + chunk;
+      const replaced = combined.split(home).join(alias);
+      if (maxCarry <= 0) return replaced;
+      const flushLen = Math.max(0, replaced.length - maxCarry);
+      carry = replaced.slice(flushLen);
+      return replaced.slice(0, flushLen);
+    },
+    flush(): string {
+      const rest = carry;
+      carry = "";
+      return rest;
+    },
+  };
+}
+
+export function IdeTerminal({ instance, projectName }: IdeTerminalProps) {
   const [tabs, setTabs] = useState<TerminalTab[]>([{ id: "1", title: "jsh" }]);
   const [activeTabId, setActiveTabId] = useState("1");
   const nextTabId = useRef(2);
   const containerRefs = useRef<Record<string, HTMLDivElement | null>>({});
-  
+  // Stable wrapper that xterm never mutates — safe to observe for resize
+  // without risking a feedback loop against xterm's own DOM/scrollbar changes.
+  const viewportRef = useRef<HTMLDivElement | null>(null);
+
   // Track terminal objects per tab
   const terminals = useRef<Record<string, { term: Terminal; fitAddon: FitAddon; process: any }>>({});
 
@@ -36,7 +65,7 @@ export function IdeTerminal({ instance }: IdeTerminalProps) {
 
   const handleCloseTab = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    
+
     // Kill process and dispose terminal
     const t = terminals.current[id];
     if (t) {
@@ -54,26 +83,9 @@ export function IdeTerminal({ instance }: IdeTerminalProps) {
     });
   };
 
-  const handleClearActive = () => {
-    const t = terminals.current[activeTabId];
-    if (t) {
-      t.term.clear();
-    }
-  };
-
   // Setup terminal for a tab when its container mounts
   const setupTerminal = async (id: string, container: HTMLDivElement) => {
     if (!instance || terminals.current[id]) return;
-
-    // Use computed styles to fetch current theme colors for xterm
-    const computed = window.getComputedStyle(document.body);
-    const getVar = (name: string) => {
-      const val = computed.getPropertyValue(name).trim();
-      // xterm.js doesn't natively parse oklch() for theme properties yet,
-      // so we use transparency and rely on the container's bg/text colors where possible,
-      // but we'll supply basic fallbacks if needed.
-      return val; 
-    };
 
     const term = new Terminal({
       cursorBlink: true,
@@ -92,6 +104,14 @@ export function IdeTerminal({ instance }: IdeTerminalProps) {
     term.loadAddon(fitAddon);
     term.loadAddon(webLinksAddon);
     term.open(container);
+
+    // Let the container/font finish laying out before the first fit — fitting
+    // against a not-yet-stable box is what desyncs the PTY's column count from
+    // the visual width and causes wrapped/duplicated text once output streams in.
+    if (document.fonts?.ready) {
+      try { await document.fonts.ready; } catch {}
+    }
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
     fitAddon.fit();
 
     try {
@@ -100,28 +120,19 @@ export function IdeTerminal({ instance }: IdeTerminalProps) {
         cwd: "/",
       });
 
-      // Pipe stdout to xterm
+      const home: string = instance.workdir || "";
+      const alias = `~/${(projectName || "project").trim()}`;
+      const pathFilter = createHomePathFilter(home, alias);
+
+      // Pipe stdout to xterm, aliasing the generated home path to the project name
       process.output.pipeTo(
         new WritableStream({
-          write(data) {
-            term.write(data);
-
-            // Server URL Detection
-            const URL_PATTERNS = [
-              /https?:\/\/localhost:\d+/,
-              /Local:\s+(https?:\/\/\S+)/,
-              /http:\/\/127\.0\.0\.1:\d+/,
-            ];
-
-            for (const pattern of URL_PATTERNS) {
-              const match = data.match(pattern);
-              if (match) {
-                const url = match[1] || match[0];
-                console.log("Detected server URL from terminal output:", url);
-                setDetectedServerUrl(url);
-                break;
-              }
-            }
+          write(data: string) {
+            term.write(pathFilter.push(data));
+          },
+          close() {
+            const rest = pathFilter.flush();
+            if (rest) term.write(rest);
           },
         })
       );
@@ -149,34 +160,44 @@ export function IdeTerminal({ instance }: IdeTerminalProps) {
 
   // Handle resize
   useEffect(() => {
-    const handleResize = () => {
-      // Fit active terminal
+    let rafId = 0;
+
+    const fitActive = () => {
       const t = terminals.current[activeTabId];
-      if (t) {
+      if (!t) return;
+      try {
         t.fitAddon.fit();
-        if (t.process) {
-          t.process.resize({ cols: t.term.cols, rows: t.term.rows });
-        }
+      } catch {
+        return;
+      }
+      if (t.process) {
+        t.process.resize({ cols: t.term.cols, rows: t.term.rows });
       }
     };
 
-    window.addEventListener("resize", handleResize);
-    
-    // Setup a ResizeObserver for the container as well
-    const observer = new ResizeObserver(() => {
-      handleResize();
-    });
-    
-    const currentContainer = containerRefs.current[activeTabId];
-    if (currentContainer) {
-      observer.observe(currentContainer);
+    // Coalesce bursts of resize notifications (drag-resize, layout thrashing)
+    // into a single fit+PTY-resize per frame, instead of resizing the PTY
+    // mid-write for every intermediate event.
+    const scheduleFit = () => {
+      cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(fitActive);
+    };
+
+    window.addEventListener("resize", scheduleFit);
+
+    // Observe the stable outer viewport wrapper, not the per-tab div xterm
+    // renders into — observing xterm's own mount point can cause a resize
+    // feedback loop as its internal scrollbar/rows mutate that element.
+    const observer = new ResizeObserver(scheduleFit);
+    if (viewportRef.current) {
+      observer.observe(viewportRef.current);
     }
 
-    // Call once when active tab changes
-    handleResize();
+    scheduleFit();
 
     return () => {
-      window.removeEventListener("resize", handleResize);
+      cancelAnimationFrame(rafId);
+      window.removeEventListener("resize", scheduleFit);
       observer.disconnect();
     };
   }, [activeTabId]);
@@ -184,7 +205,7 @@ export function IdeTerminal({ instance }: IdeTerminalProps) {
   return (
     <div className="flex flex-col h-full bg-background border-t border-border overflow-hidden font-sans">
       {/* Terminal Header */}
-      <div className="flex h-9 bg-sidebar items-center justify-between pr-2">
+      <div className="flex h-9 bg-sidebar items-center pr-2">
         <div className="flex h-full">
           {tabs.map((tab) => (
             <div
@@ -216,26 +237,16 @@ export function IdeTerminal({ instance }: IdeTerminalProps) {
             <Plus className="w-4 h-4" />
           </button>
         </div>
-        
-        <div className="flex items-center">
-          <button
-            onClick={handleClearActive}
-            title="Clear Terminal"
-            className="w-7 h-7 rounded hover:bg-sidebar-accent/50 flex items-center justify-center text-foreground/70 hover:text-foreground transition-colors"
-          >
-            <Trash2 className="w-4 h-4" />
-          </button>
-        </div>
       </div>
 
       {/* Terminal Viewports */}
-      <div className="flex-1 relative min-h-0 bg-background p-2">
+      <div ref={viewportRef} className="flex-1 relative min-h-0 bg-background p-2">
         {tabs.map((tab) => (
           <div
             key={tab.id}
             ref={(el) => assignRef(tab.id, el)}
             className={cn(
-              "absolute inset-2",
+              "absolute inset-0",
               activeTabId === tab.id ? "z-10 opacity-100" : "-z-10 opacity-0 pointer-events-none"
             )}
           />

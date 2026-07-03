@@ -3,7 +3,7 @@ import { toast } from "sonner";
 
 import { TemplateFile, TemplateFolder } from "../lib/path-to-json";
 
-import { generateFileId } from "../lib";
+import { generateFileId, getFileDisplayName } from "../lib";
 
 interface OpenFile extends TemplateFile {
   id: string;
@@ -190,25 +190,28 @@ export const useFileExplorer = create<FileExplorerState>((set, get) => ({
 
       for (const part of pathParts) {
         if (part) {
-          const nextFolder = currentFolder.items.find(
+          let nextFolder = currentFolder.items.find(
             (item) => "folderName" in item && item.folderName === part
-          ) as TemplateFolder;
-          if (nextFolder) currentFolder = nextFolder;
+          ) as TemplateFolder | undefined;
+          if (!nextFolder) {
+            nextFolder = { folderName: part, items: [] };
+            currentFolder.items.push(nextFolder);
+          }
+          currentFolder = nextFolder;
         }
       }
 
       currentFolder.items.push(newFile);
       set({ templateData: updatedTemplateData });
-      toast.success(`Created file: ${newFile.filename}.${newFile.fileExtension}`);
+      toast.success(`Created file: ${getFileDisplayName(newFile.filename, newFile.fileExtension)}`);
 
       // Use the passed saveTemplateData function
       await saveTemplateData(updatedTemplateData);
 
       // Sync with web container
       if (writeFileSync) {
-        const filePath = parentPath
-          ? `${parentPath}/${newFile.filename}.${newFile.fileExtension}`
-          : `${newFile.filename}.${newFile.fileExtension}`;
+        const fileName = getFileDisplayName(newFile.filename, newFile.fileExtension);
+        const filePath = parentPath ? `${parentPath}/${fileName}` : fileName;
         await writeFileSync(filePath, newFile.content || "");
       }
 
@@ -230,10 +233,14 @@ export const useFileExplorer = create<FileExplorerState>((set, get) => ({
 
       for (const part of pathParts) {
         if (part) {
-          const nextFolder = currentFolder.items.find(
+          let nextFolder = currentFolder.items.find(
             (item) => "folderName" in item && item.folderName === part
-          ) as TemplateFolder;
-          if (nextFolder) currentFolder = nextFolder;
+          ) as TemplateFolder | undefined;
+          if (!nextFolder) {
+            nextFolder = { folderName: part, items: [] };
+            currentFolder.items.push(nextFolder);
+          }
+          currentFolder = nextFolder;
         }
       }
 
@@ -298,7 +305,7 @@ export const useFileExplorer = create<FileExplorerState>((set, get) => ({
 
       // Use the passed saveTemplateData function
       await saveTemplateData(updatedTemplateData);
-      toast.success(`Deleted file: ${file.filename}.${file.fileExtension}`);
+      toast.success(`Deleted file: ${getFileDisplayName(file.filename, file.fileExtension)}`);
     } catch (error) {
       console.error("Error deleting file:", error);
       toast.error("Failed to delete file");

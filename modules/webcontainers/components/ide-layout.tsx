@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
+import { cn } from "@/lib/utils";
 import { IdeSidebar, IdeActivityBar } from "./ide-sidebar";
 import { IdeEditor } from "./ide-editor";
 import { IdeTerminal } from "./ide-terminal";
@@ -9,12 +10,55 @@ import { IdeTopbar } from "./ide-topbar";
 import { useIdeLayout } from "../hooks/useIdeLayout";
 import { useFileExplorer } from "@/modules/playground/hooks/useFileExplorer";
 
+/**
+ * VS Code-style hairline divider: a 1px visible line inside a wider invisible
+ * drag-catch zone, so the resize handle stays easy to grab without looking thick.
+ */
+function ResizeHandle({
+  direction,
+  onPointerDown,
+}: {
+  direction: "col" | "row";
+  onPointerDown: (e: React.PointerEvent) => void;
+}) {
+  const isCol = direction === "col";
+  return (
+    <div
+      onPointerDown={onPointerDown}
+      className={cn(
+        "group/resize relative shrink-0 z-10",
+        isCol ? "w-2 cursor-col-resize" : "h-2 cursor-row-resize"
+      )}
+    >
+      <div
+        className={cn(
+          "absolute bg-border group-hover/resize:bg-primary transition-colors",
+          isCol ? "inset-y-0 left-1/2 -translate-x-1/2 w-px" : "inset-x-0 top-1/2 -translate-y-1/2 h-px"
+        )}
+      />
+    </div>
+  );
+}
+
 interface IdeLayoutProps {
   instance: unknown;
   explorerContent: React.ReactNode;
+  sourceControlContent?: React.ReactNode;
+  projectName?: string;
+  /** Called with the tab being left/closed, before the switch/close itself happens
+   *  — used to flush a dirty file's unsaved changes so they're never lost. */
+  onBeforeFileSelect?: (currentFileId: string | null) => void;
+  onBeforeFileClose?: (fileId: string) => void;
 }
 
-export function IdeLayout({ instance, explorerContent }: IdeLayoutProps) {
+export function IdeLayout({
+  instance,
+  explorerContent,
+  sourceControlContent,
+  projectName,
+  onBeforeFileSelect,
+  onBeforeFileClose,
+}: IdeLayoutProps) {
   const { isPreviewVisible } = useIdeLayout();
   const {
     openFiles,
@@ -23,6 +67,16 @@ export function IdeLayout({ instance, explorerContent }: IdeLayoutProps) {
     closeFile,
     updateFileContent,
   } = useFileExplorer();
+
+  const handleFileSelect = (fileId: string) => {
+    if (fileId !== activeFileId) onBeforeFileSelect?.(activeFileId);
+    setActiveFileId(fileId);
+  };
+
+  const handleFileClose = (fileId: string) => {
+    onBeforeFileClose?.(fileId);
+    closeFile(fileId);
+  };
 
   // State for pane sizes
   const [explorerWidth, setExplorerWidth] = useState(260);
@@ -97,7 +151,7 @@ export function IdeLayout({ instance, explorerContent }: IdeLayoutProps) {
   return (
     <div className="flex flex-col h-screen w-screen bg-background text-foreground overflow-hidden font-sans">
       <div className="shrink-0">
-        <IdeTopbar />
+        <IdeTopbar projectName={projectName} />
       </div>
 
       <div style={{ display: 'flex', flexDirection: 'row', flex: 1, minHeight: 0, overflow: 'hidden' }}>
@@ -108,15 +162,14 @@ export function IdeLayout({ instance, explorerContent }: IdeLayoutProps) {
         {/* LEFT: File Explorer */}
         <div style={{ flex: `0 0 ${explorerWidth}px`, minWidth: '180px', maxWidth: '400px', height: '100%', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
           <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }} className="bg-sidebar">
-            <IdeSidebar activeTab={activeTab}>{explorerContent}</IdeSidebar>
+            <IdeSidebar activeTab={activeTab} sourceControlContent={sourceControlContent}>
+              {explorerContent}
+            </IdeSidebar>
           </div>
         </div>
         
         {/* Resize Handle (Explorer <-> Center) */}
-        <div
-          onPointerDown={handleExplorerResize}
-          className="w-1 shrink-0 bg-border hover:bg-primary cursor-col-resize transition-colors z-10"
-        />
+        <ResizeHandle direction="col" onPointerDown={handleExplorerResize} />
 
         {/* CENTER: Editor (Top) + Terminal (Bottom) */}
         <div style={{ display: 'flex', flexDirection: 'column', flex: '1 1 auto', minWidth: 0, height: '100%' }}>
@@ -127,23 +180,20 @@ export function IdeLayout({ instance, explorerContent }: IdeLayoutProps) {
               <IdeEditor
                 openFiles={openFiles}
                 activeFileId={activeFileId}
-                onFileSelect={setActiveFileId}
-                onFileClose={closeFile}
+                onFileSelect={handleFileSelect}
+                onFileClose={handleFileClose}
                 onContentChange={updateFileContent}
               />
             </div>
           </div>
 
           {/* Resize Handle (Editor <-> Terminal) */}
-          <div
-            onPointerDown={handleTerminalResize}
-            className="h-1 shrink-0 bg-border hover:bg-primary cursor-row-resize transition-colors z-10"
-          />
+          <ResizeHandle direction="row" onPointerDown={handleTerminalResize} />
 
           {/* CENTER-BOTTOM: Terminal */}
           <div style={{ flex: `0 0 ${terminalHeight}px`, minHeight: '120px', maxHeight: '600px', width: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
             <div style={{ flex: 1, minHeight: 0, overflow: 'hidden' }} className="h-full w-full">
-              <IdeTerminal instance={instance} />
+              <IdeTerminal instance={instance} projectName={projectName} />
             </div>
           </div>
         </div>
@@ -152,10 +202,7 @@ export function IdeLayout({ instance, explorerContent }: IdeLayoutProps) {
         {isPreviewVisible && (
           <>
             {/* Resize Handle (Center <-> Preview) */}
-            <div
-              onPointerDown={handlePreviewResize}
-              className="w-1 shrink-0 bg-border hover:bg-primary cursor-col-resize transition-colors z-10"
-            />
+            <ResizeHandle direction="col" onPointerDown={handlePreviewResize} />
             
             <div style={{ flex: `0 0 ${previewWidth}px`, minWidth: 0, height: '100%', overflow: 'hidden' }}>
               <div className="h-full w-full bg-background">

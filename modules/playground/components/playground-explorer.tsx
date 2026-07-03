@@ -6,7 +6,6 @@ import {
   ChevronRight,
   File,
   Folder,
-  Plus,
   FilePlus,
   FolderPlus,
   MoreHorizontal,
@@ -52,10 +51,9 @@ import {
 import { Button } from "@/components/ui/button";
 
 import RenameFolderDialog from "./dialogs/rename-folder-dialog";
-import NewFolderDialog from "./dialogs/new-folder-dialog";
-import NewFileDialog from "./dialogs/new-file-dialog";
 import RenameFileDialog from "./dialogs/rename-file-dialog";
 import { DeleteDialog } from "./dialogs/delete-dialog";
+import { getFileDisplayName, splitFilename } from "@/modules/playground/lib";
 
 interface TemplateFile {
   filename: string;
@@ -70,6 +68,136 @@ interface TemplateFolder {
 }
 
 type TemplateItem = TemplateFile | TemplateFolder;
+
+/**
+ * VS Code explorer order: folders before files, alphabetical within each group.
+ */
+function sortItems(items: TemplateItem[]): TemplateItem[] {
+  return [...items].sort((a, b) => {
+    const aIsFolder = "folderName" in a;
+    const bIsFolder = "folderName" in b;
+    if (aIsFolder !== bIsFolder) return aIsFolder ? -1 : 1;
+
+    const aName = aIsFolder ? (a as TemplateFolder).folderName : (a as TemplateFile).filename;
+    const bName = bIsFolder ? (b as TemplateFolder).folderName : (b as TemplateFile).filename;
+    return aName.localeCompare(bName, undefined, { sensitivity: "base" });
+  });
+}
+
+function itemKey(item: TemplateItem): string {
+  return "folderName" in item
+    ? `folder:${item.folderName}`
+    : `file:${getFileDisplayName(item.filename, item.fileExtension)}`;
+}
+
+/**
+ * Splits a raw tree-input string like "components/Button.tsx" into path segments,
+ * rejecting empty input, NUL bytes, and "." / ".." segments. Returns null if invalid.
+ */
+function parsePathSegments(raw: string): string[] | null {
+  if (raw.includes("\0")) return null;
+  const segments = raw
+    .split("/")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (segments.length === 0) return null;
+  if (segments.some((s) => s === "." || s === "..")) return null;
+  return segments;
+}
+
+/**
+ * Handles inline-input submission for both "New File" and "New Folder", supporting
+ * VS Code-style nested path creation (e.g. "components/Button.tsx" auto-creates
+ * the intermediate "components" folder).
+ */
+function submitInlineCreate(
+  kind: "file" | "folder",
+  raw: string,
+  basePath: string,
+  onAddFile?: (file: TemplateFile, parentPath: string) => void,
+  onAddFolder?: (folder: TemplateFolder, parentPath: string) => void
+) {
+  const segments = parsePathSegments(raw);
+  if (!segments) return;
+
+  const intermediateFolders = segments.slice(0, -1);
+  const name = segments[segments.length - 1];
+  const parentPath = [basePath, ...intermediateFolders].filter(Boolean).join("/");
+
+  if (kind === "folder") {
+    onAddFolder?.({ folderName: name, items: [] }, parentPath);
+  } else {
+    const { filename, fileExtension } = splitFilename(name);
+    onAddFile?.({ filename, fileExtension, content: "" }, parentPath);
+  }
+}
+
+interface InlineCreateInputProps {
+  kind: "file" | "folder";
+  level: number;
+  onConfirm: (raw: string) => void;
+  onCancel: () => void;
+}
+
+function InlineCreateInput({ kind, level, onConfirm, onCancel }: InlineCreateInputProps) {
+  const [value, setValue] = React.useState("");
+  const inputRef = React.useRef<HTMLInputElement>(null);
+  const settledRef = React.useRef(false);
+
+  React.useEffect(() => {
+    inputRef.current?.focus();
+  }, []);
+
+  const commit = () => {
+    if (settledRef.current) return;
+    settledRef.current = true;
+    const trimmed = value.trim();
+    if (trimmed) {
+      onConfirm(trimmed);
+    } else {
+      onCancel();
+    }
+  };
+
+  const cancel = () => {
+    if (settledRef.current) return;
+    settledRef.current = true;
+    onCancel();
+  };
+
+  return (
+    <SidebarMenuItem>
+      <div
+        className="w-full flex items-center py-1.5 h-[22px]"
+        style={{ paddingLeft: `${12 + level * 12}px`, paddingRight: "12px" }}
+      >
+        {kind === "folder" ? (
+          <Folder className="h-4 w-4 mr-2 shrink-0 text-muted-foreground" />
+        ) : (
+          <File className="h-4 w-4 mr-2 shrink-0 text-muted-foreground" />
+        )}
+        <input
+          ref={inputRef}
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          onKeyDown={(e) => {
+            e.stopPropagation();
+            if (e.key === "Enter") {
+              e.preventDefault();
+              commit();
+            } else if (e.key === "Escape") {
+              e.preventDefault();
+              cancel();
+            }
+          }}
+          onBlur={commit}
+          placeholder={kind === "folder" ? "folder name" : "file name"}
+          className="flex-1 min-w-0 bg-background border border-primary rounded-sm px-1 text-[13px] font-sans text-foreground outline-none"
+        />
+      </div>
+    </SidebarMenuItem>
+  );
+}
 
 interface TemplateFileTreeProps {
   data: TemplateItem;
@@ -108,18 +236,16 @@ export function TemplateFileTree({
   onRefresh,
 }: TemplateFileTreeProps) {
   const isRootFolder = data && typeof data === "object" && "folderName" in data;
-  const [isNewFileDialogOpen, setIsNewFileDialogOpen] = React.useState(false);
-  const [isNewFolderDialogOpen, setIsNewFolderDialogOpen] =
-    React.useState(false);
+  const [creatingRoot, setCreatingRoot] = React.useState<"file" | "folder" | null>(null);
   const [collapseTrigger, setCollapseTrigger] = React.useState(0);
   const [isRefreshing, setIsRefreshing] = React.useState(false);
 
   const handleAddRootFile = () => {
-    setIsNewFileDialogOpen(true);
+    setCreatingRoot("file");
   };
 
   const handleAddRootFolder = () => {
-    setIsNewFolderDialogOpen(true);
+    setCreatingRoot("folder");
   };
 
   const handleCollapseAll = () => {
@@ -137,38 +263,22 @@ export function TemplateFileTree({
     }
   };
 
-  const handleCreateFile = (filename: string, extension: string) => {
-    if (onAddFile && isRootFolder) {
-      const newFile: TemplateFile = {
-        filename,
-        fileExtension: extension,
-        content: "",
-      };
-      onAddFile(newFile, "");
+  const handleConfirmRootCreate = (raw: string) => {
+    if (isRootFolder) {
+      submitInlineCreate(creatingRoot!, raw, "", onAddFile, onAddFolder);
     }
-    setIsNewFileDialogOpen(false);
-  };
-
-  const handleCreateFolder = (folderName: string) => {
-    if (onAddFolder && isRootFolder) {
-      const newFolder: TemplateFolder = {
-        folderName,
-        items: [],
-      };
-      onAddFolder(newFolder, "");
-    }
-    setIsNewFolderDialogOpen(false);
+    setCreatingRoot(null);
   };
 
   return (
     <Sidebar collapsible="none" className="w-full border-none bg-sidebar">
       <SidebarContent className="bg-transparent py-4 px-3">
         <SidebarGroup className="p-0">
-          <div className="flex items-center justify-between px-3 py-2 mb-4">
-            <span className="text-[9px] font-medium font-sans uppercase tracking-[0.12em] text-muted-foreground">
+          <div className="group/header flex items-center justify-between px-3 py-2 mb-4">
+            <span className="text-[11px] font-medium font-sans truncate text-foreground/80">
               {title}
             </span>
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-1.5 opacity-0 group-hover/header:opacity-100 focus-within:opacity-100 transition-opacity duration-150">
               <Tooltip>
                 <TooltipTrigger asChild>
                   <button 
@@ -221,10 +331,18 @@ export function TemplateFileTree({
           </div>
           <SidebarGroupContent>
             <SidebarMenu className="space-y-1.5 pb-20">
+              {isRootFolder && creatingRoot && (
+                <InlineCreateInput
+                  kind={creatingRoot}
+                  level={0}
+                  onConfirm={handleConfirmRootCreate}
+                  onCancel={() => setCreatingRoot(null)}
+                />
+              )}
               {isRootFolder ? (
-                (data as TemplateFolder).items.map((child, index) => (
+                sortItems((data as TemplateFolder).items).map((child) => (
                   <TemplateNode
-                    key={index}
+                    key={itemKey(child)}
                     item={child}
                     onFileSelect={onFileSelect}
                     selectedFile={selectedFile}
@@ -260,18 +378,6 @@ export function TemplateFileTree({
         </SidebarGroup>
       </SidebarContent>
       <SidebarRail />
-
-      <NewFileDialog
-        isOpen={isNewFileDialogOpen}
-        onClose={() => setIsNewFileDialogOpen(false)}
-        onCreateFile={handleCreateFile}
-      />
-
-      <NewFolderDialog
-        isOpen={isNewFolderDialogOpen}
-        onClose={() => setIsNewFolderDialogOpen(false)}
-        onCreateFolder={handleCreateFolder}
-      />
     </Sidebar>
   );
 }
@@ -316,12 +422,12 @@ function TemplateNode({
 }: TemplateNodeProps) {
   const isValidItem = item && typeof item === "object";
   const isFolder = isValidItem && "folderName" in item;
-  const [isNewFileDialogOpen, setIsNewFileDialogOpen] = React.useState(false);
-  const [isNewFolderDialogOpen, setIsNewFolderDialogOpen] =
-    React.useState(false);
+  const [creating, setCreating] = React.useState<"file" | "folder" | null>(null);
   const [isRenameDialogOpen, setIsRenameDialogOpen] = React.useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = React.useState(false);
-  const [isOpen, setIsOpen] = React.useState(level < 2);
+  // Collapsed by default on initial load (VS Code convention); user-driven
+  // expand/collapse via setIsOpen below still works normally afterward.
+  const [isOpen, setIsOpen] = React.useState(false);
 
   React.useEffect(() => {
     if (collapseTrigger > 0 && isFolder) {
@@ -333,7 +439,7 @@ function TemplateNode({
 
   if (!isFolder) {
     const file = item as TemplateFile;
-    const fileName = `${file.filename}.${file.fileExtension}`;
+    const fileName = getFileDisplayName(file.filename, file.fileExtension);
 
     const isSelected = !!(
       selectedFile &&
@@ -429,11 +535,13 @@ function TemplateNode({
     const currentPath = path ? `${path}/${folderName}` : folderName;
 
     const handleAddFile = () => {
-      setIsNewFileDialogOpen(true);
+      setIsOpen(true);
+      setCreating("file");
     };
 
     const handleAddFolder = () => {
-      setIsNewFolderDialogOpen(true);
+      setIsOpen(true);
+      setCreating("folder");
     };
 
     const handleRename = () => {
@@ -449,27 +557,9 @@ function TemplateNode({
       setIsDeleteDialogOpen(false);
     };
 
-    const handleCreateFile = (filename: string, extension: string) => {
-      if (onAddFile) {
-        const newFile: TemplateFile = {
-          filename,
-          fileExtension: extension,
-          content: "",
-        };
-        onAddFile(newFile, currentPath);
-      }
-      setIsNewFileDialogOpen(false);
-    };
-
-    const handleCreateFolder = (folderName: string) => {
-      if (onAddFolder) {
-        const newFolder: TemplateFolder = {
-          folderName,
-          items: [],
-        };
-        onAddFolder(newFolder, currentPath);
-      }
-      setIsNewFolderDialogOpen(false);
+    const handleConfirmCreate = (raw: string) => {
+      submitInlineCreate(creating!, raw, currentPath, onAddFile, onAddFolder);
+      setCreating(null);
     };
 
     const handleRenameSubmit = (newFolderName: string) => {
@@ -534,9 +624,17 @@ function TemplateNode({
 
           <CollapsibleContent>
             <SidebarMenuSub className="border-l border-border ml-3 pl-2.5 space-y-1 mt-0.5">
-              {folder.items.map((childItem, index) => (
+              {creating && (
+                <InlineCreateInput
+                  kind={creating}
+                  level={level + 1}
+                  onConfirm={handleConfirmCreate}
+                  onCancel={() => setCreating(null)}
+                />
+              )}
+              {sortItems(folder.items).map((childItem) => (
                 <TemplateNode
-                  key={index}
+                  key={itemKey(childItem)}
                   item={childItem}
                   onFileSelect={onFileSelect}
                   selectedFile={selectedFile}
@@ -554,18 +652,6 @@ function TemplateNode({
             </SidebarMenuSub>
           </CollapsibleContent>
         </Collapsible>
-
-        <NewFileDialog
-          isOpen={isNewFileDialogOpen}
-          onClose={() => setIsNewFileDialogOpen(false)}
-          onCreateFile={handleCreateFile}
-        />
-
-        <NewFolderDialog
-          isOpen={isNewFolderDialogOpen}
-          onClose={() => setIsNewFolderDialogOpen(false)}
-          onCreateFolder={handleCreateFolder}
-        />
 
         <RenameFolderDialog
           isOpen={isRenameDialogOpen}
