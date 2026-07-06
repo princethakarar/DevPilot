@@ -256,7 +256,7 @@ export default function ChatDemo() {
           <div key={m.id} className={`flex ${m.sender === "user" ? "justify-end" : "justify-start"} gap-2.5`}>
             {m.sender === "ai" && (
               <div className="w-7 h-7 shrink-0 rounded-full bg-[rgba(0,180,255,0.1)] border border-[rgba(0,180,255,0.2)] flex items-center justify-center mt-0.5">
-                <img src="/icon-remove-bg.png" alt="DevPilot" className="w-4 h-4 object-contain" />
+                <img src="/icon-bg-removed.png" alt="DevPilot" className="w-4 h-4 object-contain" />
               </div>
             )}
             <div className={m.sender === "user" ? "max-w-[85%]" : "max-w-[85%] flex-1"}>
