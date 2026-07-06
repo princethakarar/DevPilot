@@ -35,6 +35,7 @@ import {
 import { SourceControlPanel } from "@/modules/playground/components/source-control-panel";
 import { useSourceControl } from "@/modules/playground/hooks/useSourceControl";
 import { useNodeModulesPersistence } from "@/modules/webcontainers/hooks/useNodeModulesPersistence";
+import { useIdeLayout } from "@/modules/webcontainers/hooks/useIdeLayout";
 import { useParams } from "next/navigation";
 import React, {
   useCallback,
@@ -90,6 +91,17 @@ const MainPlaygroundPage = () => {
     setPlaygroundId(id);
   }, [id, setPlaygroundId]);
 
+  // The preview URL lives in a global store, and the WebContainer instance
+  // itself is cached across playgrounds in the same tab (see useWebContainer.ts).
+  // Without this, opening a new playground while a previous one's dev server
+  // was still running left its stale preview URL on screen — this project's
+  // preview showing another project's app. Clear it the moment this
+  // playground's id changes, so preview stays blank until THIS project's own
+  // server-ready fires.
+  useEffect(() => {
+    useIdeLayout.getState().setDetectedServerUrl(null);
+  }, [id]);
+
   useEffect(() => {
     if (templateData) {
       setTemplateData(templateData);
@@ -102,8 +114,27 @@ const MainPlaygroundPage = () => {
     if (instance && templateData && !hasMounted.current) {
       hasMounted.current = true;
       const files = transformToWebContainerFormat(templateData);
-      instance.mount(files).then(() => {
+      instance.mount(files).then(async () => {
         console.log("Initial files mounted to WebContainer");
+
+        // Speed up whatever `npm install` the user runs in the terminal: skip
+        // the audit/funding network round-trips and progress-bar I/O, without
+        // touching concurrency (that's tuned for stability elsewhere, not
+        // speed — see AGENTS.md's Boot Reliability System notes on maxsockets).
+        // Only written if the project doesn't already ship its own .npmrc.
+        try {
+          await instance.fs.readFile("/.npmrc", "utf-8");
+        } catch {
+          try {
+            await instance.fs.writeFile(
+              "/.npmrc",
+              ["audit=false", "fund=false", "progress=false", "prefer-offline=true"].join("\n")
+            );
+          } catch {
+            // Non-fatal — worst case installs just use npm's defaults.
+          }
+        }
+
         setFilesMounted(true);
       });
     }

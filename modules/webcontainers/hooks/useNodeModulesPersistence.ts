@@ -23,9 +23,15 @@ function findPackageJsonContent(folder: TemplateFolder): string | null {
 }
 
 /**
- * Best-effort node_modules persistence across refreshes. Call only once the
- * project's own files have already been mounted into `instance` (pass `null`
- * for `templateData` until then) to avoid racing WebContainer's own mount().
+ * Best-effort node_modules persistence across refreshes AND across different
+ * playgrounds. Call only once the project's own files have already been
+ * mounted into `instance` (pass `null` for `templateData` until then) to
+ * avoid racing WebContainer's own mount().
+ *
+ * The cache is keyed purely on the package.json content hash (see
+ * node-modules-persistence.ts), so a brand new playground built from the same
+ * starter template as one already installed elsewhere restores instantly
+ * instead of paying a fresh `npm install`.
  *
  * See node-modules-persistence.ts for what this can and can't actually do —
  * short version: WebContainer can't reconnect to a prior instance across a
@@ -54,14 +60,14 @@ export function useNodeModulesPersistence(
         const pkgHash = await computePackageJsonHash(pkgJson);
         if (cancelled) return;
 
-        const restored = await tryRestoreNodeModules(instance, playgroundId, pkgHash);
+        const restored = await tryRestoreNodeModules(instance, pkgHash);
         if (restored) {
           console.info("[DevPilot] Restored node_modules from local cache — no install needed.");
         }
         if (cancelled) return;
 
         cleanupWatch = watchForInstallCompletion(instance, () => {
-          captureAndStoreNodeModules(instance, playgroundId, pkgHash).catch(() => {});
+          captureAndStoreNodeModules(instance, pkgHash).catch(() => {});
         });
       } catch (err) {
         console.warn("[DevPilot] node_modules persistence setup failed (non-fatal):", err);

@@ -198,19 +198,27 @@ export function IdeLayout({
           </div>
         </div>
 
-        {/* RIGHT: Preview (conditionally rendered) */}
+        {/* RIGHT: Preview — kept mounted even while hidden (display:none, not
+            unmounted) so its WebContainer "server-ready" listener never misses
+            the event while the panel happens to be toggled off. Unmounting it
+            meant reopening the panel after boot finished left preview stuck on
+            "not available" until the dev server was restarted. */}
         {isPreviewVisible && (
-          <>
-            {/* Resize Handle (Center <-> Preview) */}
-            <ResizeHandle direction="col" onPointerDown={handlePreviewResize} />
-            
-            <div style={{ flex: `0 0 ${previewWidth}px`, minWidth: 0, height: '100%', overflow: 'hidden' }}>
-              <div className="h-full w-full bg-background">
-                <IdePreview instance={instance} />
-              </div>
-            </div>
-          </>
+          <ResizeHandle direction="col" onPointerDown={handlePreviewResize} />
         )}
+        <div
+          style={{
+            flex: isPreviewVisible ? `0 0 ${previewWidth}px` : "0 0 0px",
+            minWidth: 0,
+            height: '100%',
+            overflow: 'hidden',
+            display: isPreviewVisible ? undefined : 'none',
+          }}
+        >
+          <div className="h-full w-full bg-background">
+            <IdePreview instance={instance} />
+          </div>
+        </div>
       </div>
     </div>
   );

@@ -16,9 +16,7 @@ export function IdePreview({ instance }: IdePreviewProps) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
   useEffect(() => {
-    if (detectedServerUrl) {
-      setCurrentUrl(detectedServerUrl);
-    }
+    setCurrentUrl(detectedServerUrl);
   }, [detectedServerUrl]);
 
   // Listen for WebContainer server-ready

@@ -18,24 +18,42 @@ interface TerminalTab {
 }
 
 /**
+ * Length of the longest suffix of `str` that is also a (non-full-length) prefix
+ * of `pattern` — i.e. how many trailing characters of `str` could still turn
+ * into a match if more of `pattern` arrives in the next chunk.
+ */
+function partialMatchTailLength(str: string, pattern: string): number {
+  const maxLen = Math.min(str.length, pattern.length - 1);
+  for (let len = maxLen; len > 0; len--) {
+    if (str.endsWith(pattern.slice(0, len))) return len;
+  }
+  return 0;
+}
+
+/**
  * Streaming replacer for the WebContainer's generated absolute home path
  * (e.g. "/home/u0xrvata8m4ov7iu20xphrd61m4sbm-rmmh"), which jsh prints verbatim
- * in its prompt. Buffers up to `home.length - 1` trailing characters between
- * chunks so a match split across two writes (e.g. by process.output back-pressure)
- * is still caught. Display-only: the shell still operates on the real path.
+ * in its prompt. Only holds back characters when the tail of the current chunk
+ * actually looks like the start of a split match — NOT a flat `home.length - 1`
+ * on every write, which stalled ordinary single-character keystroke echo (each
+ * character sat in the buffer since it never got remotely close to that
+ * threshold, making typing feel laggy) until enough output piled up to flush.
+ * Display-only: the shell still operates on the real path.
  */
 function createHomePathFilter(home: string, alias: string) {
-  const maxCarry = home ? home.length - 1 : 0;
   let carry = "";
   return {
     push(chunk: string): string {
       if (!home) return chunk;
       const combined = carry + chunk;
       const replaced = combined.split(home).join(alias);
-      if (maxCarry <= 0) return replaced;
-      const flushLen = Math.max(0, replaced.length - maxCarry);
-      carry = replaced.slice(flushLen);
-      return replaced.slice(0, flushLen);
+      const tail = partialMatchTailLength(replaced, home);
+      if (tail === 0) {
+        carry = "";
+        return replaced;
+      }
+      carry = replaced.slice(replaced.length - tail);
+      return replaced.slice(0, replaced.length - tail);
     },
     flush(): string {
       const rest = carry;
@@ -56,6 +74,23 @@ export function IdeTerminal({ instance, projectName }: IdeTerminalProps) {
 
   // Track terminal objects per tab
   const terminals = useRef<Record<string, { term: Terminal; fitAddon: FitAddon; process: any }>>({});
+
+  // The WebContainer instance is cached globally and reused across different
+  // playgrounds in the same tab (see useWebContainer.ts), so a shell process
+  // started here (e.g. a manually-run `npm run dev`) would otherwise keep
+  // running in the background after navigating away — still bound to its
+  // port and still reachable — which is what let one project's dev server
+  // bleed into another project's preview. Kill every tab's process on unmount
+  // so leaving a playground actually stops what it was running.
+  useEffect(() => {
+    return () => {
+      for (const t of Object.values(terminals.current)) {
+        try { t.process?.kill(); } catch {}
+        try { t.term.dispose(); } catch {}
+      }
+      terminals.current = {};
+    };
+  }, []);
 
   const handleAddTab = () => {
     const id = String(nextTabId.current++);

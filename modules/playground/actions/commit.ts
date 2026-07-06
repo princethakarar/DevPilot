@@ -13,25 +13,39 @@ interface FileChange {
 }
 
 /**
- * Builds a gitignore matcher from the project's own root-level .gitignore file
- * content (if present), so Source Control tracks changes exactly the way
- * `git status` would — ignored files (.env, etc.) never show up as changes and
- * are never committed/pushed. Only the root .gitignore is honored (no nested
+ * Secret-bearing files that must never show up as a trackable/pushable change,
+ * regardless of what the project's own .gitignore says. This exists because
+ * several bundled starter templates ship with an empty .gitignore (e.g.
+ * react, react-ts, vue), and even a populated one (plain nextjs) may only
+ * cover ".env*.local" and miss a bare ".env" — either gap would otherwise let
+ * real secrets get pushed to GitHub. Deliberately narrow (not ".env.example",
+ * ".env.sample", etc.) since those are meant to be committed.
+ */
+const ALWAYS_IGNORED_PATTERNS = [".env", ".env.local", ".env*.local"].join("\n");
+
+/**
+ * Builds a gitignore matcher combining the always-ignored secret baseline
+ * above with the project's own root-level .gitignore file content (if
+ * present), so Source Control tracks changes exactly the way `git status`
+ * would — ignored files never show up as changes and are never
+ * committed/pushed. Only the root .gitignore is honored (no nested
  * per-directory .gitignore support, mirroring git's directory-scoped semantics
  * would require much more machinery than this DB-backed tree model has).
  */
-function getIgnoreMatcher(tree: TemplateFolder | null): ReturnType<typeof ignore> | null {
-  if (!tree?.items) return null;
+function getIgnoreMatcher(tree: TemplateFolder | null): ReturnType<typeof ignore> {
+  const matcher = ignore().add(ALWAYS_IGNORED_PATTERNS);
+  if (!tree?.items) return matcher;
+
   const gitignoreFile = tree.items.find(
     (item): item is { filename: string; fileExtension: string; content: string } =>
       "filename" in item && item.filename === ".gitignore" && item.fileExtension === ""
   );
-  if (!gitignoreFile?.content) return null;
+  if (!gitignoreFile?.content) return matcher;
 
   try {
-    return ignore().add(gitignoreFile.content);
+    return matcher.add(gitignoreFile.content);
   } catch {
-    return null;
+    return matcher;
   }
 }
 

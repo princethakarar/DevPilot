@@ -2,9 +2,14 @@ import { get, set, del } from "idb-keyval";
 import type { WebContainer, IFSWatcher, DirEnt } from "@webcontainer/api";
 
 /**
- * Persists an installed node_modules tree to IndexedDB per (playgroundId, package.json hash)
- * so a full browser refresh — or reopening the playground shortly after — doesn't force a
- * fresh `npm install`. This is a WORKAROUND, not a true "keep the container alive" fix:
+ * Persists an installed node_modules tree to IndexedDB keyed ONLY on the
+ * package.json content hash (not per-playground), so a full browser refresh —
+ * or opening a brand new playground that happens to share the same dependency
+ * set as one already installed — doesn't force a fresh `npm install`. Keying
+ * on the hash alone (rather than (playgroundId, hash)) is what lets two
+ * different playgrounds built from the same starter template share one cached
+ * bundle instead of each paying the install cost separately.
+ * This is a WORKAROUND, not a true "keep the container alive" fix:
  * WebContainer has no API to reconnect to a previously-booted instance across a page reload
  * (the WASM VM and its whole in-memory filesystem are destroyed with the tab/page). See the
  * `useNodeModulesPersistence` hook for where this is wired into the boot flow, and the
@@ -26,7 +31,6 @@ interface StoredBundle {
 }
 
 interface ManifestEntry {
-  playgroundId: string;
   pkgHash: string;
   sizeBytes: number;
   cachedAt: number;
@@ -36,8 +40,8 @@ const STORE_PREFIX = "devpilot-nm-v1:";
 const MANIFEST_KEY = "devpilot-nm-manifests-v1";
 const MAX_TOTAL_BYTES = 400 * 1024 * 1024;
 
-function storeKey(playgroundId: string, pkgHash: string): string {
-  return `${STORE_PREFIX}${playgroundId}:${pkgHash}`;
+function storeKey(pkgHash: string): string {
+  return `${STORE_PREFIX}${pkgHash}`;
 }
 
 export async function computePackageJsonHash(content: string): Promise<string> {
@@ -121,49 +125,38 @@ async function getManifest(): Promise<ManifestEntry[]> {
   }
 }
 
-async function getCachedNodeModules(playgroundId: string, pkgHash: string): Promise<StoredBundle | null> {
+async function getCachedNodeModules(pkgHash: string): Promise<StoredBundle | null> {
   try {
-    return (await get<StoredBundle>(storeKey(playgroundId, pkgHash))) ?? null;
+    return (await get<StoredBundle>(storeKey(pkgHash))) ?? null;
   } catch {
     return null;
   }
 }
 
 async function storeNodeModulesBundle(
-  playgroundId: string,
   pkgHash: string,
   bundle: StoredBundle
 ): Promise<void> {
   try {
     const manifest = await getManifest();
 
-    // Drop any older bundle cached for this same playground under a different
-    // (now-stale) package.json hash.
-    const stale = manifest.filter((m) => m.playgroundId === playgroundId && m.pkgHash !== pkgHash);
-    for (const s of stale) {
-      await del(storeKey(s.playgroundId, s.pkgHash)).catch(() => {});
-    }
+    await set(storeKey(pkgHash), bundle);
 
-    await set(storeKey(playgroundId, pkgHash), bundle);
-
-    const next = manifest.filter((m) => !(m.playgroundId === playgroundId && m.pkgHash !== pkgHash));
-    const idx = next.findIndex((m) => m.playgroundId === playgroundId && m.pkgHash === pkgHash);
+    const next = manifest.filter((m) => m.pkgHash !== pkgHash);
     const entry: ManifestEntry = {
-      playgroundId,
       pkgHash,
       sizeBytes: bundle.compressedData.byteLength,
       cachedAt: Date.now(),
     };
-    if (idx >= 0) next[idx] = entry;
-    else next.push(entry);
+    next.push(entry);
 
-    // Global LRU cap across all cached projects — a heavy template (e.g. Next.js,
-    // ~300MB+ uncompressed node_modules) can evict older/smaller entries.
+    // Global LRU cap across all cached dependency sets — a heavy template (e.g.
+    // Next.js, ~300MB+ uncompressed node_modules) can evict older/smaller entries.
     next.sort((a, b) => a.cachedAt - b.cachedAt);
     let total = next.reduce((acc, m) => acc + m.sizeBytes, 0);
     while (total > MAX_TOTAL_BYTES && next.length > 1) {
       const oldest = next.shift()!;
-      await del(storeKey(oldest.playgroundId, oldest.pkgHash)).catch(() => {});
+      await del(storeKey(oldest.pkgHash)).catch(() => {});
       total -= oldest.sizeBytes;
     }
 
@@ -176,13 +169,15 @@ async function storeNodeModulesBundle(
 /**
  * Attempts to restore a previously-captured node_modules tree into the given,
  * freshly-mounted container. Returns true if it actually restored something.
+ * Since the cache is keyed only on the package.json hash, this also fires for
+ * a brand new playground that happens to share the exact same dependency set
+ * as one already installed elsewhere — not just a reopen of the same playground.
  */
 export async function tryRestoreNodeModules(
   instance: WebContainer,
-  playgroundId: string,
   pkgHash: string
 ): Promise<boolean> {
-  const cached = await getCachedNodeModules(playgroundId, pkgHash);
+  const cached = await getCachedNodeModules(pkgHash);
   if (!cached) return false;
 
   try {
@@ -220,7 +215,6 @@ export async function tryRestoreNodeModules(
  */
 export async function captureAndStoreNodeModules(
   instance: WebContainer,
-  playgroundId: string,
   pkgHash: string
 ): Promise<boolean> {
   try {
@@ -238,7 +232,7 @@ export async function captureAndStoreNodeModules(
   const raw = concat(chunks, totalSize);
   const { data: compressedData, compressed } = await gzip(raw);
 
-  await storeNodeModulesBundle(playgroundId, pkgHash, {
+  await storeNodeModulesBundle(pkgHash, {
     entries,
     compressedData,
     compressed,
