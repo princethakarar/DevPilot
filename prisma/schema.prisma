@@ -80,6 +80,25 @@ model Playground {
   user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   templateFiles TemplateFile[]
+  envVars       PlaygroundEnvVar[]
+}
+
+// Per-playground environment variables (secrets), stored out-of-band from
+// TemplateFile.content so real credentials never sit as plaintext inside a
+// project's file tree JSON blob (which is what gets read into the browser-
+// executed WebContainer preview and shown in the file explorer). A ".env"
+// file is still synthesized client-side for the editor/WebContainer mount —
+// only the durable copy lives here.
+model PlaygroundEnvVar {
+  id           String     @id @default(cuid()) @map("_id")
+  playgroundId String
+  key          String
+  value        String
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  playground   Playground @relation(fields: [playgroundId], references: [id], onDelete: Cascade)
+
+  @@unique([playgroundId, key])
 }
 
 model StarMark {

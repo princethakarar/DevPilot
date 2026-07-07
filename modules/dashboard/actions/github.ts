@@ -19,6 +19,11 @@ const BINARY_EXTENSIONS = new Set([
 // Max file size to import (100KB)
 const MAX_FILE_SIZE = 100 * 1024;
 
+// .env-family files are never imported from a repo, even if committed there —
+// secrets belong in the platform's own env handling, not copied verbatim into
+// a Playground's stored file tree (mirrors the exclusion in path-to-json.ts).
+const ENV_FILE_PATTERN = /(^|\/)\.env(\..+)?$/;
+
 /**
  * Check if the current user has a linked GitHub account.
  */
@@ -210,6 +215,7 @@ export async function importGithubRepository(
     // 2. Filter to only blob (file) entries, skipping binaries and large files
     const fileEntries = tree.filter((entry) => {
       if (entry.type !== "blob") return false;
+      if (ENV_FILE_PATTERN.test(entry.path)) return false;
       const ext = entry.path.split(".").pop()?.toLowerCase() || "";
       if (BINARY_EXTENSIONS.has(ext)) return false;
       if (entry.size && entry.size > MAX_FILE_SIZE) return false;

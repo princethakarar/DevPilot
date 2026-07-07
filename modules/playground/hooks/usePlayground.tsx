@@ -1,8 +1,10 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { toast } from "sonner";
 
 import type { TemplateFolder } from "../lib/path-to-json";
 import { getPlaygroundById, SaveUpdatedCode } from "../actions";
+import { getPlaygroundEnvVars, setPlaygroundEnvVars } from "../actions/env";
+import { findEnvFile, injectEnvFile, parseEnvContent, serializeEnvContent, stripEnvFile } from "../lib/env-merge";
 
 interface PlaygroundData {
   id: string;
@@ -27,6 +29,27 @@ export const usePlayground = (id: string): UsePlaygroundReturn => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // Tracks whether this playground currently has any rows in PlaygroundEnvVar,
+  // so saveTemplateData knows whether an incoming save with no ".env" file
+  // means "never had one" (nothing to do) vs. "user just deleted/emptied it"
+  // (clear the stored rows too, instead of leaving them to reappear on reload).
+  const hasStoredEnvVars = useRef(false);
+
+  // Merges this playground's out-of-band env vars (see PlaygroundEnvVar) back
+  // into the loaded tree as a synthesized ".env" file, so the editor/explorer/
+  // WebContainer mount all see it exactly as if it were a normal file — while
+  // the durable copy in Mongo (and anything pushed to GitHub) never contains
+  // the raw secret text. A playground with no PlaygroundEnvVar rows yet (never
+  // migrated, or genuinely has none) is returned untouched.
+  const mergeEnvVars = useCallback(async (data: TemplateFolder): Promise<TemplateFolder> => {
+    const vars = await getPlaygroundEnvVars(id);
+    hasStoredEnvVars.current = vars.length > 0;
+    if (vars.length === 0) return data;
+
+    const existing = findEnvFile(data);
+    return injectEnvFile(data, existing?.path ?? [], serializeEnvContent(vars));
+  }, [id]);
+
   const loadPlayground = useCallback(async () => {
     if (!id || id === "undefined") return;
 
@@ -42,7 +65,7 @@ export const usePlayground = (id: string): UsePlaygroundReturn => {
 
       if (typeof rawContent === "string") {
         const parsedContent = JSON.parse(rawContent);
-        setTemplateData(parsedContent);
+        setTemplateData(await mergeEnvVars(parsedContent));
         toast.success("playground loaded successfully");
         return;
       }
@@ -55,19 +78,19 @@ export const usePlayground = (id: string): UsePlaygroundReturn => {
 
       const templateRes = await res.json();
 
+      let freshData: TemplateFolder;
       if (templateRes.templateJson && Array.isArray(templateRes.templateJson)) {
-        setTemplateData({
+        freshData = {
           folderName: "Root",
           items: templateRes.templateJson,
-        });
+        };
       } else {
-        setTemplateData(
-          templateRes.templateJson || {
-            folderName: "Root",
-            items: [],
-          }
-        );
+        freshData = templateRes.templateJson || {
+          folderName: "Root",
+          items: [],
+        };
       }
+      setTemplateData(await mergeEnvVars(freshData));
       toast.success("Template loaded successfully");
     } catch (error) {
       console.error("Error loading playground:", error);
@@ -76,14 +99,29 @@ export const usePlayground = (id: string): UsePlaygroundReturn => {
     } finally {
       setIsLoading(false);
     }
-  }, [id]);
+  }, [id, mergeEnvVars]);
 
 
 
   const saveTemplateData = useCallback(async(data:TemplateFolder)=>{
     if (!id || id === "undefined") return;
     try {
-          await SaveUpdatedCode(id, data);
+      const envFile = findEnvFile(data);
+      let treeToPersist = data;
+
+      if (envFile) {
+        const vars = parseEnvContent(envFile.content);
+        await setPlaygroundEnvVars(id, vars);
+        hasStoredEnvVars.current = vars.length > 0;
+        treeToPersist = stripEnvFile(data);
+      } else if (hasStoredEnvVars.current) {
+        // .env was deleted/emptied in this save — clear the stored rows too,
+        // instead of leaving them to silently reappear on the next reload.
+        await setPlaygroundEnvVars(id, []);
+        hasStoredEnvVars.current = false;
+      }
+
+      await SaveUpdatedCode(id, treeToPersist);
       setTemplateData(data);
       // No success toast here — callers show their own contextual toast (or
       // stay silent for autosave); this fires far too often once autosave is on.
