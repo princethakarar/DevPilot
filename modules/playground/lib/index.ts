@@ -1,4 +1,4 @@
-import { TemplateFile, TemplateFolder } from "./path-to-json";
+import { TemplateFile, TemplateFolder, TemplateItem } from "./path-to-json";
 
 /**
  * Renders a file's display/on-disk name. Extensionless files (Dockerfile, LICENSE)
@@ -179,6 +179,32 @@ export function removeItemAtPath(root: TemplateFolder, filePath: string): Templa
  * @param rootFolder The root template folder containing all files
  * @returns A unique file identifier including full path
  */
+/**
+ * True if `items` (the entries of a single directory) already contains
+ * something named `candidateName`. Comparison is case-insensitive because the
+ * underlying filesystem may be case-insensitive (Windows/macOS default), so
+ * "Foo.txt" and "foo.txt" collide even though the in-memory tree is itself
+ * case-sensitive. A file and a folder sharing a name also collide, matching
+ * real filesystem semantics. Pass `skip` (the item being renamed) to exclude
+ * it from the check, so a no-op or case-only rename of the same item isn't
+ * blocked as a false-positive collision with itself.
+ */
+export function findSiblingNameConflict(
+  items: TemplateItem[],
+  candidateName: string,
+  skip?: TemplateItem
+): boolean {
+  const target = candidateName.toLowerCase();
+  return items.some((item) => {
+    if (item === skip) return false;
+    const name =
+      "folderName" in item
+        ? item.folderName
+        : getFileDisplayName(item.filename, item.fileExtension);
+    return name.toLowerCase() === target;
+  });
+}
+
 export const generateFileId = (file: TemplateFile, rootFolder: TemplateFolder): string => {
   // Find the file's path in the folder structure
   const path = findFilePath(file, rootFolder)?.replace(/^\/+/, '');

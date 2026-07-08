@@ -3,7 +3,7 @@ import { toast } from "sonner";
 
 import { TemplateFile, TemplateFolder } from "../lib/path-to-json";
 
-import { generateFileId, getFileDisplayName } from "../lib";
+import { generateFileId, getFileDisplayName, findSiblingNameConflict } from "../lib";
 
 interface OpenFile extends TemplateFile {
   id: string;
@@ -201,9 +201,15 @@ export const useFileExplorer = create<FileExplorerState>((set, get) => ({
         }
       }
 
+      const newFileName = getFileDisplayName(newFile.filename, newFile.fileExtension);
+      if (findSiblingNameConflict(currentFolder.items, newFileName)) {
+        toast.error(`A file named "${newFileName}" already exists in this folder.`);
+        return;
+      }
+
       currentFolder.items.push(newFile);
       set({ templateData: updatedTemplateData });
-      toast.success(`Created file: ${getFileDisplayName(newFile.filename, newFile.fileExtension)}`);
+      toast.success(`Created file: ${newFileName}`);
 
       // Use the passed saveTemplateData function
       await saveTemplateData(updatedTemplateData);
@@ -242,6 +248,11 @@ export const useFileExplorer = create<FileExplorerState>((set, get) => ({
           }
           currentFolder = nextFolder;
         }
+      }
+
+      if (findSiblingNameConflict(currentFolder.items, newFolder.folderName)) {
+        toast.error(`A folder named "${newFolder.folderName}" already exists in this folder.`);
+        return;
       }
 
       currentFolder.items.push(newFolder);
@@ -405,6 +416,12 @@ export const useFileExplorer = create<FileExplorerState>((set, get) => ({
       );
 
       if (fileIndex !== -1) {
+        const newFileName = getFileDisplayName(newFilename, newExtension);
+        if (findSiblingNameConflict(currentFolder.items, newFileName, currentFolder.items[fileIndex])) {
+          toast.error(`A file named "${newFileName}" already exists in this folder.`);
+          return;
+        }
+
         const updatedFile = {
           ...currentFolder.items[fileIndex],
           filename: newFilename,
@@ -466,6 +483,11 @@ export const useFileExplorer = create<FileExplorerState>((set, get) => ({
       );
 
       if (folderIndex !== -1) {
+        if (findSiblingNameConflict(currentFolder.items, newFolderName, currentFolder.items[folderIndex])) {
+          toast.error(`A folder named "${newFolderName}" already exists in this folder.`);
+          return;
+        }
+
         const updatedFolder = {
           ...currentFolder.items[folderIndex],
           folderName: newFolderName,

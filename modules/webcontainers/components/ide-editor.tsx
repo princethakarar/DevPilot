@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 import { FileText, X } from "lucide-react";
 import { PlaygroundEditor } from "@/modules/playground/components/playground-editor";
 import { getFileDisplayName } from "@/modules/playground/lib";
+import { computeTabLabels } from "@/modules/playground/lib/tab-labels";
 
 interface OpenFile {
   id: string;
@@ -34,6 +35,7 @@ export function IdeEditor({
 }: IdeEditorProps) {
   const activeFile = openFiles.find((f) => f.id === activeFileId);
   const monaco = useMonaco();
+  const tabLabels = React.useMemo(() => computeTabLabels(openFiles), [openFiles]);
 
   // Each open file gets its own persistent Monaco model (see PlaygroundEditor's
   // `path` prop) so per-file undo history survives tab switches. Closing a tab
@@ -71,7 +73,7 @@ export function IdeEditor({
                 )}
                 <FileText className={cn("h-4 w-4 shrink-0", isActive ? "text-primary" : "text-foreground/70")} />
                 <span className="truncate text-[13px] select-none flex-1 font-sans">
-                  {getFileDisplayName(file.filename, file.fileExtension)}
+                  {tabLabels.get(file.id) ?? getFileDisplayName(file.filename, file.fileExtension)}
                 </span>
                 
                 <div className="flex items-center justify-center w-5 h-5 shrink-0">

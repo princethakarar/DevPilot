@@ -53,7 +53,7 @@ import { Button } from "@/components/ui/button";
 import RenameFolderDialog from "./dialogs/rename-folder-dialog";
 import RenameFileDialog from "./dialogs/rename-file-dialog";
 import { DeleteDialog } from "./dialogs/delete-dialog";
-import { getFileDisplayName, splitFilename } from "@/modules/playground/lib";
+import { getFileDisplayName, splitFilename, findSiblingNameConflict } from "@/modules/playground/lib";
 
 interface TemplateFile {
   filename: string;
@@ -137,10 +137,13 @@ interface InlineCreateInputProps {
   level: number;
   onConfirm: (raw: string) => void;
   onCancel: () => void;
+  /** Sibling items already in the target directory, used for a live duplicate-name check. */
+  existingItems?: TemplateItem[];
 }
 
-function InlineCreateInput({ kind, level, onConfirm, onCancel }: InlineCreateInputProps) {
+function InlineCreateInput({ kind, level, onConfirm, onCancel, existingItems = [] }: InlineCreateInputProps) {
   const [value, setValue] = React.useState("");
+  const [error, setError] = React.useState<string | null>(null);
   const inputRef = React.useRef<HTMLInputElement>(null);
   const settledRef = React.useRef(false);
 
@@ -150,13 +153,23 @@ function InlineCreateInput({ kind, level, onConfirm, onCancel }: InlineCreateInp
 
   const commit = () => {
     if (settledRef.current) return;
-    settledRef.current = true;
     const trimmed = value.trim();
-    if (trimmed) {
-      onConfirm(trimmed);
-    } else {
+    if (!trimmed) {
+      settledRef.current = true;
       onCancel();
+      return;
     }
+
+    // Nested path creation (e.g. "components/Button.tsx") lands in a
+    // not-yet-resolved subfolder, so only validate a same-directory
+    // duplicate for a plain, non-nested name.
+    if (!trimmed.includes("/") && findSiblingNameConflict(existingItems, trimmed)) {
+      setError(`A ${kind} named "${trimmed}" already exists in this folder.`);
+      return;
+    }
+
+    settledRef.current = true;
+    onConfirm(trimmed);
   };
 
   const cancel = () => {
@@ -168,7 +181,7 @@ function InlineCreateInput({ kind, level, onConfirm, onCancel }: InlineCreateInp
   return (
     <SidebarMenuItem>
       <div
-        className="w-full flex items-center py-1.5 h-[22px]"
+        className="w-full flex items-center py-1.5 h-[22px] relative"
         style={{ paddingLeft: `${12 + level * 12}px`, paddingRight: "12px" }}
       >
         {kind === "folder" ? (
@@ -179,7 +192,10 @@ function InlineCreateInput({ kind, level, onConfirm, onCancel }: InlineCreateInp
         <input
           ref={inputRef}
           value={value}
-          onChange={(e) => setValue(e.target.value)}
+          onChange={(e) => {
+            setValue(e.target.value);
+            if (error) setError(null);
+          }}
           onKeyDown={(e) => {
             e.stopPropagation();
             if (e.key === "Enter") {
@@ -192,8 +208,19 @@ function InlineCreateInput({ kind, level, onConfirm, onCancel }: InlineCreateInp
           }}
           onBlur={commit}
           placeholder={kind === "folder" ? "folder name" : "file name"}
-          className="flex-1 min-w-0 bg-background border border-primary rounded-sm px-1 text-[13px] font-sans text-foreground outline-none"
+          className={cn(
+            "flex-1 min-w-0 bg-background border rounded-sm px-1 text-[13px] font-sans text-foreground outline-none",
+            error ? "border-destructive" : "border-primary"
+          )}
         />
+        {error && (
+          <div
+            className="absolute left-0 top-full mt-0.5 z-20 text-[11px] leading-tight text-destructive bg-popover border border-destructive/40 rounded px-1.5 py-0.5 shadow-sm whitespace-nowrap"
+            style={{ marginLeft: `${12 + level * 12}px` }}
+          >
+            {error}
+          </div>
+        )}
       </div>
     </SidebarMenuItem>
   );
@@ -337,6 +364,7 @@ export function TemplateFileTree({
                   level={0}
                   onConfirm={handleConfirmRootCreate}
                   onCancel={() => setCreatingRoot(null)}
+                  existingItems={(data as TemplateFolder).items}
                 />
               )}
               {isRootFolder ? (
@@ -630,6 +658,7 @@ function TemplateNode({
                   level={level + 1}
                   onConfirm={handleConfirmCreate}
                   onCancel={() => setCreating(null)}
+                  existingItems={folder.items}
                 />
               )}
               {sortItems(folder.items).map((childItem) => (
