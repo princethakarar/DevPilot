@@ -1,24 +1,38 @@
 import { getFileDisplayName } from "./index";
 
 export interface TabFileRef {
-  /** Full path from the project root, "/"-separated (e.g. "Backend/.env"), as produced by generateFileId. */
+  /** Full path from the project root, "/"-separated (e.g. "Backend/.env"), as produced by buildFileId. */
   id: string;
   filename: string;
   fileExtension: string;
 }
 
+export interface TabLabel {
+  /** Folder context shown before the filename, styled as secondary/muted. Empty for root-level files — there's no folder to show. */
+  folderHint: string;
+  /** The bare filename, styled as primary. */
+  fileName: string;
+  /** The complete, untruncated path from the project root — always shows this in full (e.g. in a tooltip), regardless of how folderHint itself is truncated for display. */
+  fullPath: string;
+}
+
 /**
- * Derives a display label per open tab, prefixing just enough parent-folder
- * segments to disambiguate tabs whose bare filename collides with another
- * currently-open tab (e.g. "Backend/.env" vs "Frontend/.env"). Filenames that
- * are unique among open tabs keep their bare name. Purely derived from the
- * current `files` list (no stored state), so it stays correct as tabs
- * open/close. Comparison is case-insensitive to match findSiblingNameConflict's
- * treatment of the underlying (possibly case-insensitive) filesystem.
+ * Derives a per-tab label that always includes the immediate parent folder
+ * for non-root files (e.g. "Backend/.env"), not only when a name collides
+ * with another open tab — path context is useful regardless of duplicates.
+ * Root-level files get no folder hint, since there's nothing to show. If the
+ * immediate parent still isn't enough to disambiguate two open tabs sharing
+ * both a filename AND their nearest folder (e.g. "apps/api/Backend/.env" vs
+ * "apps/web/Backend/.env"), more parent segments are added until unique.
+ * Purely derived from the current `files` list (no stored state), so it
+ * stays correct as tabs open/close. Bare-name grouping is case-insensitive to
+ * match findSiblingNameConflict's treatment of the underlying (possibly
+ * case-insensitive) filesystem.
  */
-export function computeTabLabels(files: TabFileRef[]): Map<string, string> {
-  const labels = new Map<string, string>();
+export function computeTabLabels(files: TabFileRef[]): Map<string, TabLabel> {
   const bareNameOf = (f: TabFileRef) => getFileDisplayName(f.filename, f.fileExtension);
+  // Parent folder segments only (excludes the filename itself), nearest-first.
+  const parentSegmentsOf = (f: TabFileRef) => f.id.split("/").filter(Boolean).slice(0, -1).reverse();
 
   const groups = new Map<string, TabFileRef[]>();
   for (const file of files) {
@@ -31,35 +45,41 @@ export function computeTabLabels(files: TabFileRef[]): Map<string, string> {
     }
   }
 
-  // Parent folder segments only (excludes the filename itself), nearest-first.
-  const parentSegmentsOf = (f: TabFileRef) => f.id.split("/").filter(Boolean).slice(0, -1).reverse();
+  const labels = new Map<string, TabLabel>();
 
   for (const group of groups.values()) {
-    if (group.length === 1) {
-      labels.set(group[0].id, bareNameOf(group[0]));
-      continue;
+    const maxDepth = Math.max(0, ...group.map((f) => parentSegmentsOf(f).length));
+
+    const hintsAtDepth = (depth: number) => {
+      const hints = new Map<string, string>();
+      for (const file of group) {
+        const nearest = parentSegmentsOf(file).slice(0, depth).reverse();
+        hints.set(file.id, nearest.join("/"));
+      }
+      return hints;
+    };
+
+    // Always show at least the immediate parent (depth 1) when the file has
+    // one; a purely root-level file naturally gets an empty hint since it has
+    // no parent segments at any depth.
+    let depth = Math.min(1, maxDepth);
+    let hints = hintsAtDepth(depth);
+
+    while (depth < maxDepth) {
+      const seen = new Map<string, number>();
+      for (const hint of hints.values()) seen.set(hint, (seen.get(hint) ?? 0) + 1);
+      const collides = [...seen.values()].some((count) => count > 1);
+      if (!collides) break;
+      depth++;
+      hints = hintsAtDepth(depth);
     }
 
-    const maxDepth = Math.max(...group.map((f) => parentSegmentsOf(f).length));
-
-    for (let depth = 1; depth <= maxDepth; depth++) {
-      const candidate = new Map<string, string>();
-      const seen = new Set<string>();
-      let allUnique = true;
-
-      for (const file of group) {
-        const nearestSegments = parentSegmentsOf(file).slice(0, depth).reverse();
-        const bare = bareNameOf(file);
-        const label = nearestSegments.length > 0 ? `${nearestSegments.join("/")}/${bare}` : bare;
-        if (seen.has(label)) allUnique = false;
-        seen.add(label);
-        candidate.set(file.id, label);
-      }
-
-      if (allUnique || depth === maxDepth) {
-        for (const [id, label] of candidate) labels.set(id, label);
-        break;
-      }
+    for (const file of group) {
+      labels.set(file.id, {
+        folderHint: hints.get(file.id) ?? "",
+        fileName: bareNameOf(file),
+        fullPath: file.id,
+      });
     }
   }
 

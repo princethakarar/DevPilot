@@ -283,8 +283,8 @@ const MainPlaygroundPage = () => {
   const activeFile = openFiles.find((file) => file.id === activeFileId);
   const hasUnsavedChanges = openFiles.some((file) => file.hasUnsavedChanges);
 
-  const handleFileSelect = (file: TemplateFile) => {
-    openFile(file);
+  const handleFileSelect = (file: TemplateFile, parentPath: string) => {
+    openFile(file, parentPath);
   };
 
   // Saves one or more open files: writes each straight to the WebContainer FS

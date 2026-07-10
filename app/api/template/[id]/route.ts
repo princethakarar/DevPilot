@@ -1,5 +1,5 @@
 import { scanTemplateDirectory } from "@/modules/playground/lib/path-to-json";
-import { db } from "@/lib/db";
+import { findPlaygroundById } from "@/lib/db/repositories/playgrounds";
 import { templatePaths } from "@/lib/template";
 import path from "path";
 import fs from "fs/promises";
@@ -26,9 +26,7 @@ if(!id || id === "undefined" || id === "ready"){
       return Response.json({ error: "Missing playground ID" }, { status: 400 });
 }
 
-const playground = await db.playground.findUnique({
-    where:{id}
-})
+const playground = await findPlaygroundById(id)
 
   if (!playground) {
     return Response.json({ error: "Playground not found" }, { status: 404 });

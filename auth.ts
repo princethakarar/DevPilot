@@ -1,6 +1,7 @@
 import NextAuth from "next-auth"
-import { PrismaAdapter } from "@auth/prisma-adapter"
-import { db } from "./lib/db"
+import { DataApiAdapter } from "./lib/db/authAdapter"
+import { findUserByEmail, createUser } from "./lib/db/repositories/users"
+import { findAccountByProviderAccountId, createAccount } from "./lib/db/repositories/accounts"
 import authConfig from "./auth.config"
 import { getUserById, getAccountByUserId } from "./modules/auth/actions"
 import { cookies } from "next/headers"
@@ -12,44 +13,36 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
             return false;
         }
 
-        const existingUser = await db.user.findUnique({
-            where: {email: user.email!}
-        })
+        const existingUser = await findUserByEmail(user.email!)
 
         if (!existingUser) {
-        const newUser = await db.user.create({
-          data: {
-            email: user.email!,
-            name: user.name,
-            image: user.image,
-            accounts: {
-              create: {
-                type: account.type,
-                provider: account.provider,
-                providerAccountId: account.providerAccountId,
-                refreshToken: account.refresh_token,
-                accessToken: account.access_token,
-                expiresAt: account.expires_at,
-                tokenType: account.token_type,
-                scope: account.scope,
-                idToken: account.id_token,
-                sessionState: account.session_state as string | undefined,
-              },
-            },
-          },
+        const newUser = await createUser({
+          email: user.email!,
+          name: user.name,
+          image: user.image,
+        });
+
+        await createAccount({
+          userId: newUser.id,
+          type: account.type,
+          provider: account.provider,
+          providerAccountId: account.providerAccountId,
+          refreshToken: account.refresh_token,
+          accessToken: account.access_token,
+          expiresAt: account.expires_at,
+          tokenType: account.token_type,
+          scope: account.scope,
+          idToken: account.id_token,
+          sessionState: account.session_state as string | undefined,
         });
 
         if (!newUser) return false; // Return false if user creation fails
         } else {
             // Link the account if user exists
-        const existingAccount = await db.account.findUnique({
-          where: {
-            provider_providerAccountId: {
-              provider: account.provider,
-              providerAccountId: account.providerAccountId,
-            },
-          },
-        });
+        const existingAccount = await findAccountByProviderAccountId(
+          account.provider,
+          account.providerAccountId
+        )
 
         // If the account does not exist, verify we have an active session (user is linking)
         if (!existingAccount) {
@@ -61,21 +54,18 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
             return false;
           }
 
-          await db.account.create({
-            data: {
-              userId: existingUser.id,
-              type: account.type,
-              provider: account.provider,
-              providerAccountId: account.providerAccountId,
-              refreshToken: account.refresh_token,
-              accessToken: account.access_token,
-              expiresAt: account.expires_at,
-              tokenType: account.token_type,
-              scope: account.scope,
-              idToken: account.id_token,
-              // @ts-ignore
-              sessionState: account.session_state,
-            },
+          await createAccount({
+            userId: existingUser.id,
+            type: account.type,
+            provider: account.provider,
+            providerAccountId: account.providerAccountId,
+            refreshToken: account.refresh_token,
+            accessToken: account.access_token,
+            expiresAt: account.expires_at,
+            tokenType: account.token_type,
+            scope: account.scope,
+            idToken: account.id_token,
+            sessionState: account.session_state as string | undefined,
           });
         }
         }
@@ -124,7 +114,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
     },
   },
   secret: process.env.AUTH_SECRET,
-  adapter: PrismaAdapter(db),
+  adapter: DataApiAdapter(),
   session: { strategy: "jwt" },
   ...authConfig
 })

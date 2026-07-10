@@ -1,0 +1,24 @@
+name: MongoDB integration tests (manual)
+
+# Opt-in only, unlike ci.yml. Requires DATABASE_URL and MONGODB_DATABASE to
+# be configured as repository secrets pointing at a real (ideally
+# non-production, disposable) MongoDB database before this can run — none of
+# that has been set up as part of this migration. See
+# lib/db/__tests__/integration/mongoClient.integration.test.ts.
+on:
+  workflow_dispatch:
+
+jobs:
+  integration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run test:integration
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          MONGODB_DATABASE: ${{ secrets.MONGODB_DATABASE }}

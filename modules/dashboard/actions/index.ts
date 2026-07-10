@@ -1,6 +1,14 @@
 "use server";
 
-import { db } from "@/lib/db";
+import { createStarMark, deleteStarMark } from "@/lib/db/repositories/starMarks";
+import {
+  findPlaygroundsForUserWithOwnerAndStar,
+  findPlaygroundByUserAndTitle,
+  createPlayground as createPlaygroundRow,
+  deletePlaygroundCascade,
+  updatePlayground,
+  findPlaygroundById,
+} from "@/lib/db/repositories/playgrounds";
 import { currentUser } from "@/modules/auth/actions";
 import { revalidatePath } from "next/cache";
 
@@ -16,23 +24,13 @@ export const toggleStarMarked = async (
 
   try {
     if (isChecked) {
-      await db.starMark.create({
-        data: {
-          userId: userId!,
-          playgroundId,
-          isMarked: isChecked,
-        },
+      await createStarMark({
+        userId,
+        playgroundId,
+        isMarked: isChecked,
       });
     } else {
-        await db.starMark.delete({
-        where: {
-          userId_playgroundId: {
-            userId,
-            playgroundId: playgroundId,
-
-          },
-        },
-      });
+      await deleteStarMark(userId, playgroundId);
     }
 
      revalidatePath("/dashboard");
@@ -45,24 +43,10 @@ export const toggleStarMarked = async (
 
 export const getAllPlaygroundForUser = async () => {
   const user = await currentUser();
+  if (!user?.id) return [];
 
   try {
-    const playground = await db.playground.findMany({
-      where: {
-        userId: user?.id,
-      },
-      include: {
-        user: true,
-        Starmark:{
-            where:{
-                userId:user?.id!
-            },
-            select:{
-                isMarked:true
-            }
-        }
-      },
-    });
+    const playground = await findPlaygroundsForUserWithOwnerAndStar(user.id);
 
     return playground;
   } catch (error) {
@@ -83,24 +67,17 @@ export const createPlayground = async (data: {
   const { template, title, description } = data;
 
   try {
-    const existingProject = await db.playground.findFirst({
-      where: {
-        userId: user.id,
-        title: title,
-      },
-    });
+    const existingProject = await findPlaygroundByUserAndTitle(user.id, title);
 
     if (existingProject) {
       return { error: "A project with this name already exists." };
     }
 
-    const playground = await db.playground.create({
-      data: {
-        title: title,
-        description: description,
-        template: template,
-        userId: user.id,
-      },
+    const playground = await createPlaygroundRow({
+      title: title,
+      description: description,
+      template: template,
+      userId: user.id,
     });
 
     return { playground };
@@ -112,11 +89,7 @@ export const createPlayground = async (data: {
 
 export const deleteProjectById = async (id: string) => {
   try {
-    await db.playground.delete({
-      where: {
-        id,
-      },
-    });
+    await deletePlaygroundCascade(id);
     revalidatePath("/dashboard");
   } catch (error) {
     console.log(error);
@@ -128,12 +101,7 @@ export const editProjectById = async (
   data: { title: string; description: string }
 ) => {
   try {
-    await db.playground.update({
-      where: {
-        id,
-      },
-      data: data,
-    });
+    await updatePlayground(id, data);
     revalidatePath("/dashboard");
   } catch (error) {
     console.log(error);
@@ -142,23 +110,18 @@ export const editProjectById = async (
 
 export const duplicateProjectById = async (id: string) => {
   try {
-    const originalPlayground = await db.playground.findUnique({
-      where: { id },
-      // todo: add tempalte files
-    });
+    const originalPlayground = await findPlaygroundById(id);
     if (!originalPlayground) {
       throw new Error("Original playground not found");
     }
 
-    const duplicatedPlayground = await db.playground.create({
-      data: {
-        title: `${originalPlayground.title} (Copy)`,
-        description: originalPlayground.description,
-        template: originalPlayground.template,
-        userId: originalPlayground.userId,
+    const duplicatedPlayground = await createPlaygroundRow({
+      title: `${originalPlayground.title} (Copy)`,
+      description: originalPlayground.description,
+      template: originalPlayground.template,
+      userId: originalPlayground.userId,
 
-        // todo: add template files
-      },
+      // todo: add template files
     });
 
     revalidatePath("/dashboard");

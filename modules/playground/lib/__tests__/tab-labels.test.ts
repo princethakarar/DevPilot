@@ -10,24 +10,37 @@ const ref = (id: string): TabFileRef => {
 };
 
 describe("computeTabLabels", () => {
-  it("keeps the bare filename when there is no collision", () => {
-    const labels = computeTabLabels([ref("index.ts"), ref("Backend/app.ts")]);
-    expect(labels.get("index.ts")).toBe("index.ts");
-    expect(labels.get("Backend/app.ts")).toBe("app.ts");
+  it("gives a root-level file no folder hint (nothing to show)", () => {
+    const labels = computeTabLabels([ref("index.ts")]);
+    const label = labels.get("index.ts")!;
+    expect(label.folderHint).toBe("");
+    expect(label.fileName).toBe("index.ts");
+    expect(label.fullPath).toBe("index.ts");
+  });
+
+  it("always shows the immediate parent folder for a non-root file, even with no collision", () => {
+    const labels = computeTabLabels([ref("Backend/app.ts"), ref("index.ts")]);
+    const backend = labels.get("Backend/app.ts")!;
+    expect(backend.folderHint).toBe("Backend");
+    expect(backend.fileName).toBe("app.ts");
+    expect(backend.fullPath).toBe("Backend/app.ts");
+
+    // Unrelated root file is unaffected.
+    expect(labels.get("index.ts")!.folderHint).toBe("");
   });
 
   it("disambiguates two open tabs with the same bare filename using the immediate parent folder", () => {
     const labels = computeTabLabels([ref("Backend/.env"), ref("Frontend/.env")]);
-    expect(labels.get("Backend/.env")).toBe("Backend/.env");
-    expect(labels.get("Frontend/.env")).toBe("Frontend/.env");
+    expect(labels.get("Backend/.env")!.folderHint).toBe("Backend");
+    expect(labels.get("Frontend/.env")!.folderHint).toBe("Frontend");
   });
 
-  it("is reactive: closing one colliding tab reverts the remaining tab to its bare name", () => {
+  it("is reactive: closing one colliding tab still leaves the remaining tab's own immediate-parent hint (always-on, not collision-only)", () => {
     const withBoth = computeTabLabels([ref("Backend/.env"), ref("Frontend/.env")]);
-    expect(withBoth.get("Backend/.env")).toBe("Backend/.env");
+    expect(withBoth.get("Backend/.env")!.folderHint).toBe("Backend");
 
     const afterClosingOne = computeTabLabels([ref("Backend/.env")]);
-    expect(afterClosingOne.get("Backend/.env")).toBe(".env");
+    expect(afterClosingOne.get("Backend/.env")!.folderHint).toBe("Backend");
   });
 
   it("falls back to more path segments when immediate parents also collide", () => {
@@ -35,8 +48,8 @@ describe("computeTabLabels", () => {
       ref("apps/api/Backend/.env"),
       ref("apps/web/Backend/.env"),
     ]);
-    expect(labels.get("apps/api/Backend/.env")).toBe("api/Backend/.env");
-    expect(labels.get("apps/web/Backend/.env")).toBe("web/Backend/.env");
+    expect(labels.get("apps/api/Backend/.env")!.folderHint).toBe("api/Backend");
+    expect(labels.get("apps/web/Backend/.env")!.folderHint).toBe("web/Backend");
   });
 
   it("keeps disambiguating up to the full path if needed for a 3-way collision", () => {
@@ -45,18 +58,24 @@ describe("computeTabLabels", () => {
       ref("a/y/Backend/.env"),
       ref("b/y/Backend/.env"),
     ]);
-    const values = new Set(labels.values());
-    expect(values.size).toBe(3);
+    const hints = new Set([...labels.values()].map((l) => l.folderHint));
+    expect(hints.size).toBe(3);
   });
 
-  it("only disambiguates the colliding group, leaving unrelated tabs untouched", () => {
-    const labels = computeTabLabels([ref("Backend/.env"), ref("Frontend/.env"), ref("index.ts")]);
-    expect(labels.get("index.ts")).toBe("index.ts");
+  it("only disambiguates the colliding group, leaving unrelated tabs at their default depth", () => {
+    const labels = computeTabLabels([ref("Backend/.env"), ref("Frontend/.env"), ref("Backend/index.ts")]);
+    expect(labels.get("Backend/index.ts")!.folderHint).toBe("Backend");
   });
 
-  it("matches bare names case-insensitively", () => {
+  it("matches bare names case-insensitively when grouping for disambiguation", () => {
     const labels = computeTabLabels([ref("Backend/README.md"), ref("Frontend/readme.md")]);
-    expect(labels.get("Backend/README.md")).toBe("Backend/README.md");
-    expect(labels.get("Frontend/readme.md")).toBe("Frontend/readme.md");
+    expect(labels.get("Backend/README.md")!.folderHint).toBe("Backend");
+    expect(labels.get("Frontend/readme.md")!.folderHint).toBe("Frontend");
+  });
+
+  it("always exposes the full untruncated path for a tooltip, regardless of folder depth shown", () => {
+    const labels = computeTabLabels([ref("apps/api/Backend/.env"), ref("apps/web/Backend/.env")]);
+    expect(labels.get("apps/api/Backend/.env")!.fullPath).toBe("apps/api/Backend/.env");
+    expect(labels.get("apps/web/Backend/.env")!.fullPath).toBe("apps/web/Backend/.env");
   });
 });

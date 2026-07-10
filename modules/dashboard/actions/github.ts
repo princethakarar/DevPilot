@@ -1,6 +1,7 @@
 "use server";
 
-import { db } from "@/lib/db";
+import { findAccountByUserIdAndProvider } from "@/lib/db/repositories/accounts";
+import { createPlaygroundWithTemplateFile } from "@/lib/db/repositories/playgrounds";
 import { currentUser } from "@/modules/auth/actions";
 import { revalidatePath } from "next/cache";
 
@@ -35,13 +36,7 @@ export async function checkGithubLink(): Promise<{
     const user = await currentUser();
     if (!user?.id) return { linked: false, error: "Not authenticated" };
 
-    const account = await db.account.findFirst({
-      where: {
-        userId: user.id,
-        provider: "github",
-      },
-      select: { id: true },
-    });
+    const account = await findAccountByUserIdAndProvider(user.id, "github");
 
     return { linked: !!account };
   } catch (error) {
@@ -61,10 +56,7 @@ export async function fetchUserRepos(): Promise<{
     const user = await currentUser();
     if (!user?.id) return { repos: [], error: "Not authenticated" };
 
-    const account = await db.account.findFirst({
-      where: { userId: user.id, provider: "github" },
-      select: { accessToken: true },
-    });
+    const account = await findAccountByUserIdAndProvider(user.id, "github");
 
     if (!account?.accessToken) {
       return { repos: [], error: "GitHub account not linked" };
@@ -126,10 +118,7 @@ export async function fetchRepoBranches(
     const user = await currentUser();
     if (!user?.id) return { branches: [], error: "Not authenticated" };
 
-    const account = await db.account.findFirst({
-      where: { userId: user.id, provider: "github" },
-      select: { accessToken: true },
-    });
+    const account = await findAccountByUserIdAndProvider(user.id, "github");
 
     if (!account?.accessToken) {
       return { branches: [], error: "GitHub account not linked" };
@@ -180,10 +169,7 @@ export async function importGithubRepository(
     const user = await currentUser();
     if (!user?.id) return { error: "Not authenticated" };
 
-    const account = await db.account.findFirst({
-      where: { userId: user.id, provider: "github" },
-      select: { accessToken: true },
-    });
+    const account = await findAccountByUserIdAndProvider(user.id, "github");
 
     if (!account?.accessToken) {
       return { error: "GitHub account not linked" };
@@ -252,8 +238,8 @@ export async function importGithubRepository(
     const rootFolder = buildTemplateFolderFromPaths(fileContents, repo);
 
     // 5. Create Playground + TemplateFile in database
-    const playground = await db.playground.create({
-      data: {
+    const playground = await createPlaygroundWithTemplateFile(
+      {
         title: `${owner}/${repo}`,
         description: `Imported from GitHub (${branch} branch)`,
         template: "REACT", // Default template type for GitHub imports
@@ -261,13 +247,9 @@ export async function importGithubRepository(
         githubRepo: `${owner}/${repo}`,
         githubBranch: branch,
         githubBaseContent: JSON.stringify(rootFolder),
-        templateFiles: {
-          create: {
-            content: JSON.stringify(rootFolder),
-          },
-        },
       },
-    });
+      JSON.stringify(rootFolder)
+    );
 
     revalidatePath("/dashboard");
     return { playgroundId: playground.id };

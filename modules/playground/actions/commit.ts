@@ -1,7 +1,13 @@
 "use server";
 
 import ignore from "ignore";
-import { db } from "@/lib/db";
+import {
+  findPlaygroundById,
+  findPlaygroundWithTemplateFiles,
+  updatePlaygroundGithubBaseContent,
+} from "@/lib/db/repositories/playgrounds";
+import { findAccountByUserIdAndProvider } from "@/lib/db/repositories/accounts";
+import { updateTemplateFileContent } from "@/lib/db/repositories/templateFiles";
 import { currentUser } from "@/modules/auth/actions";
 import type { TemplateFolder } from "../lib/path-to-json";
 import { setFileContentAtPath, removeItemAtPath } from "../lib";
@@ -66,14 +72,8 @@ function filterIgnored(
  */
 export async function getPlaygroundGithubInfo(playgroundId: string) {
   try {
-    const playground = await db.playground.findUnique({
-      where: { id: playgroundId },
-      select: {
-        githubRepo: true,
-        githubBranch: true,
-        githubBaseContent: true,
-        userId: true,
-      },
+    const playground = await findPlaygroundById(playgroundId, {
+      projection: { githubRepo: 1, githubBranch: 1, githubBaseContent: 1, userId: 1 },
     });
 
     if (!playground) return { error: "Playground not found" };
@@ -102,14 +102,7 @@ export async function commitChangesToGithub(
     if (!user?.id) return { success: false, error: "Not authenticated" };
 
     // 1. Get playground data
-    const playground = await db.playground.findUnique({
-      where: { id: playgroundId },
-      include: {
-        templateFiles: {
-          select: { content: true },
-        },
-      },
-    });
+    const playground = await findPlaygroundWithTemplateFiles(playgroundId);
 
     if (!playground) return { success: false, error: "Playground not found" };
     if (playground.userId !== user.id)
@@ -118,10 +111,7 @@ export async function commitChangesToGithub(
       return { success: false, error: "No GitHub repository linked" };
 
     // 2. Get GitHub access token
-    const account = await db.account.findFirst({
-      where: { userId: user.id, provider: "github" },
-      select: { accessToken: true },
-    });
+    const account = await findAccountByUserIdAndProvider(user.id, "github");
 
     if (!account?.accessToken)
       return { success: false, error: "GitHub account not linked" };
@@ -265,15 +255,12 @@ export async function commitChangesToGithub(
       return { success: false, error: `Failed to update branch: ${updateRefRes.status}` };
 
     // 10. Update the base content in the database to the new state
-    await db.playground.update({
-      where: { id: playgroundId },
-      data: {
-        githubBaseContent:
-          typeof currentContent === "string"
-            ? currentContent
-            : JSON.stringify(currentContent),
-      },
-    });
+    await updatePlaygroundGithubBaseContent(
+      playgroundId,
+      typeof currentContent === "string"
+        ? currentContent
+        : JSON.stringify(currentContent)
+    );
 
     return {
       success: true,
@@ -356,14 +343,7 @@ export async function getPlaygroundChangesList(
     const user = await currentUser();
     if (!user?.id) return { changes: [], error: "Not authenticated" };
 
-    const playground = await db.playground.findUnique({
-      where: { id: playgroundId },
-      include: {
-        templateFiles: {
-          select: { content: true },
-        },
-      },
-    });
+    const playground = await findPlaygroundWithTemplateFiles(playgroundId);
 
     if (!playground) return { changes: [], error: "Playground not found" };
 
@@ -414,10 +394,7 @@ export async function discardFileChanges(
     const user = await currentUser();
     if (!user?.id) return { success: false, error: "Not authenticated" };
 
-    const playground = await db.playground.findUnique({
-      where: { id: playgroundId },
-      include: { templateFiles: { select: { content: true } } },
-    });
+    const playground = await findPlaygroundWithTemplateFiles(playgroundId);
 
     if (!playground) return { success: false, error: "Playground not found" };
     if (playground.userId !== user.id) return { success: false, error: "Unauthorized" };
@@ -443,10 +420,7 @@ export async function discardFileChanges(
         ? removeItemAtPath(currentTree, filePath) // was "added" — discard = remove entirely
         : setFileContentAtPath(currentTree, filePath, baseFileContent); // "modified"/"deleted" — restore
 
-    await db.templateFile.update({
-      where: { playgroundId },
-      data: { content: JSON.stringify(newTree) },
-    });
+    await updateTemplateFileContent(playgroundId, JSON.stringify(newTree));
 
     return {
       success: true,

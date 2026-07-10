@@ -1,25 +1,14 @@
 "use server";
 
-import { db } from "@/lib/db";
+import { findPlaygroundSummaryWithTemplateFiles } from "@/lib/db/repositories/playgrounds";
+import { upsertTemplateFileForPlayground } from "@/lib/db/repositories/templateFiles";
 import { TemplateFolder } from "../lib/path-to-json";
 import { currentUser } from "@/modules/auth/actions";
 
 export const getPlaygroundById = async(id:string)=>{
     if (!id || id === "undefined") return null;
     try {
-        const playground = await db.playground.findUnique({
-            where:{id},
-            select:{
-                title:true,
-                githubRepo:true,
-                githubBranch:true,
-                templateFiles:{
-                    select:{
-                        content:true
-                    }
-                }
-            }
-        })
+        const playground = await findPlaygroundSummaryWithTemplateFiles(id);
         return playground;
     } catch (error) {
         console.log(error)
@@ -31,18 +20,10 @@ export const SaveUpdatedCode = async(playgroundId:string , data:TemplateFolder)=
   if (!user) return null;
 
   try {
-    const updatedPlayground = await db.templateFile.upsert({
-        where:{
-            playgroundId
-        },
-        update:{
-            content:JSON.stringify(data)
-        },
-        create:{
-            playgroundId,
-            content:JSON.stringify(data)
-        }
-    })
+    const updatedPlayground = await upsertTemplateFileForPlayground(
+      playgroundId,
+      JSON.stringify(data)
+    );
 
     return updatedPlayground;
   } catch (error) {

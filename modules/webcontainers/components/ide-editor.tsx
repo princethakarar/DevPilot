@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
 import { FileText, X } from "lucide-react";
 import { PlaygroundEditor } from "@/modules/playground/components/playground-editor";
 import { getFileDisplayName } from "@/modules/playground/lib";
-import { computeTabLabels } from "@/modules/playground/lib/tab-labels";
+import { computeTabLabels, type TabLabel } from "@/modules/playground/lib/tab-labels";
 
 interface OpenFile {
   id: string;
@@ -57,11 +57,17 @@ export function IdeEditor({
         <div className="flex h-9 bg-sidebar overflow-x-auto no-scrollbar">
           {openFiles.map((file) => {
             const isActive = file.id === activeFileId;
+            const label: TabLabel = tabLabels.get(file.id) ?? {
+              folderHint: "",
+              fileName: getFileDisplayName(file.filename, file.fileExtension),
+              fullPath: file.id,
+            };
             return (
               <div
                 key={file.id}
                 onClick={() => onFileSelect(file.id)}
                 data-state={isActive ? "active" : "inactive"}
+                title={label.fullPath}
                 className={cn(
                   "playground-tab group relative flex items-center h-full px-3 gap-2 min-w-[120px] max-w-[200px] border-r border-border cursor-pointer shrink-0 transition-colors",
                   isActive ? "bg-background text-foreground" : "bg-sidebar text-foreground/70 hover:bg-sidebar-accent/50",
@@ -73,9 +79,12 @@ export function IdeEditor({
                 )}
                 <FileText className={cn("h-4 w-4 shrink-0", isActive ? "text-primary" : "text-foreground/70")} />
                 <span className="truncate text-[13px] select-none flex-1 font-sans">
-                  {tabLabels.get(file.id) ?? getFileDisplayName(file.filename, file.fileExtension)}
+                  {label.folderHint && (
+                    <span className="text-[11px] text-foreground/50">{label.folderHint}/</span>
+                  )}
+                  {label.fileName}
                 </span>
-                
+
                 <div className="flex items-center justify-center w-5 h-5 shrink-0">
                   {file.hasUnsavedChanges ? (
                     <div className="w-2.5 h-2.5 rounded-full bg-foreground group-hover:hidden" />

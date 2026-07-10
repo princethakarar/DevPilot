@@ -25,6 +25,10 @@ import HeroCanvas from "@/modules/home/landing/hero-canvas";
 import { signIn } from "next-auth/react";
 import { disconnectProvider } from "@/modules/auth/actions";
 
+// New Project card is hidden for now (GitHub import is the primary path); flip to true to re-enable.
+// Underlying creation flow (modal, handler, route) is untouched.
+const SHOW_NEW_PROJECT = false;
+
 interface DashboardContentProps {
   user: { 
     id?: string;
@@ -154,21 +158,6 @@ export default function DashboardContent({ user, projects, onDeleteProject, onUp
     navigator.clipboard.writeText(`${window.location.origin}/playground/${projectId}`);
     toast.success("Project URL copied to clipboard");
   };
-
-  const templateColors: Record<string, string> = {
-    REACT: "#61DAFB", NEXTJS: "#e8f4ff", EXPRESS: "#28c840", VUE: "#4FC08D", HONO: "#e36002", ANGULAR: "#DD0031",
-  };
-
-  const templateLogos: Record<string, string> = {
-    REACT: "/react.svg",
-    NEXTJS: "/nextjs-icon.svg",
-    EXPRESS: "/expressjs-icon.svg",
-    VUE: "/vuejs-icon.svg",
-    HONO: "/hono.svg",
-    ANGULAR: "/angular-2.svg",
-  };
-
-
 
   return (
     <div className="relative min-h-screen w-full overflow-hidden bg-[#050d1a]">
@@ -344,28 +333,30 @@ export default function DashboardContent({ user, projects, onDeleteProject, onUp
 
 
         {/* ─── ACTION CARDS ─── */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-5 mb-8">
-          {/* New Project */}
-          <div
-            onClick={() => setIsModalOpen(true)}
-            className="group flex items-center justify-between px-4 sm:px-7 py-4 sm:py-6 rounded-xl border border-[rgba(0,180,255,0.12)] bg-gradient-to-br from-[rgba(10,31,61,0.7)] to-[rgba(7,20,40,0.9)] cursor-pointer hover:border-[rgba(0,180,255,0.35)] hover:-translate-y-0.5 transition-all duration-300 hover:shadow-[0_8px_30px_rgba(0,180,255,0.1)]"
-          >
-            <div className="flex items-center gap-3 sm:gap-4">
-              <div className="w-10 h-10 sm:w-12 sm:h-12 shrink-0 rounded-xl bg-[rgba(0,180,255,0.1)] border border-[rgba(0,180,255,0.2)] flex items-center justify-center group-hover:shadow-[0_0_20px_rgba(0,180,255,0.2)] transition-shadow">
-                <Plus className="w-5 h-5 sm:w-6 sm:h-6 text-[#00b4ff]" />
+        <div className={`mb-8 ${SHOW_NEW_PROJECT ? "grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-5" : ""}`}>
+          {/* New Project (hidden — see SHOW_NEW_PROJECT) */}
+          {SHOW_NEW_PROJECT && (
+            <div
+              onClick={() => setIsModalOpen(true)}
+              className="group flex items-center justify-between px-4 sm:px-7 py-4 sm:py-6 rounded-xl border border-[rgba(0,180,255,0.12)] bg-gradient-to-br from-[rgba(10,31,61,0.7)] to-[rgba(7,20,40,0.9)] cursor-pointer hover:border-[rgba(0,180,255,0.35)] hover:-translate-y-0.5 transition-all duration-300 hover:shadow-[0_8px_30px_rgba(0,180,255,0.1)]"
+            >
+              <div className="flex items-center gap-3 sm:gap-4">
+                <div className="w-10 h-10 sm:w-12 sm:h-12 shrink-0 rounded-xl bg-[rgba(0,180,255,0.1)] border border-[rgba(0,180,255,0.2)] flex items-center justify-center group-hover:shadow-[0_0_20px_rgba(0,180,255,0.2)] transition-shadow">
+                  <Plus className="w-5 h-5 sm:w-6 sm:h-6 text-[#00b4ff]" />
+                </div>
+                <div>
+                  <h3 className="text-[14px] sm:text-[16px] font-bold text-white mb-0.5">New Project</h3>
+                  <p className="font-jetbrains text-[10px] sm:text-[12px] text-[#7ca8cc]">Start building instantly with<br className="hidden sm:block"/>AI-powered development.</p>
+                </div>
               </div>
-              <div>
-                <h3 className="text-[14px] sm:text-[16px] font-bold text-white mb-0.5">New Project</h3>
-                <p className="font-jetbrains text-[10px] sm:text-[12px] text-[#7ca8cc]">Start building instantly with<br className="hidden sm:block"/>AI-powered development.</p>
-              </div>
+              <ArrowRight className="w-4 h-4 sm:w-5 sm:h-5 text-[#3a6080] group-hover:text-[#00b4ff] group-hover:translate-x-1 transition-all shrink-0" />
             </div>
-            <ArrowRight className="w-4 h-4 sm:w-5 sm:h-5 text-[#3a6080] group-hover:text-[#00b4ff] group-hover:translate-x-1 transition-all shrink-0" />
-          </div>
+          )}
 
           {/* Import GitHub */}
           <div
             onClick={() => setIsRepoDialogOpen(true)}
-            className="group flex items-center justify-between px-4 sm:px-7 py-4 sm:py-6 rounded-xl border border-[rgba(0,180,255,0.12)] bg-gradient-to-br from-[rgba(10,31,61,0.7)] to-[rgba(7,20,40,0.9)] cursor-pointer hover:border-[rgba(0,180,255,0.35)] hover:-translate-y-0.5 transition-all duration-300 hover:shadow-[0_8px_30px_rgba(0,180,255,0.1)]"
+            className={`group flex items-center justify-between px-4 sm:px-7 py-4 sm:py-6 rounded-xl border border-[rgba(0,180,255,0.12)] bg-gradient-to-br from-[rgba(10,31,61,0.7)] to-[rgba(7,20,40,0.9)] cursor-pointer hover:border-[rgba(0,180,255,0.35)] hover:-translate-y-0.5 transition-all duration-300 hover:shadow-[0_8px_30px_rgba(0,180,255,0.1)] ${SHOW_NEW_PROJECT ? "" : "max-w-xl mx-auto"}`}
           >
             <div className="flex items-center gap-3 sm:gap-4">
               <div className="w-10 h-10 sm:w-12 sm:h-12 shrink-0 rounded-xl bg-[rgba(168,85,247,0.1)] border border-[rgba(168,85,247,0.2)] flex items-center justify-center group-hover:shadow-[0_0_20px_rgba(168,85,247,0.2)] transition-shadow">
@@ -397,36 +388,20 @@ export default function DashboardContent({ user, projects, onDeleteProject, onUp
                 <table className="block md:table w-full">
                   <thead className="hidden md:table-header-group">
                     <tr className="border-b border-[rgba(0,180,255,0.06)]">
-                      {["Project", "Template", "Updated", "Owner", "Actions"].map(h => (
+                      {["Project", "Updated", "Owner", "Actions"].map(h => (
                         <th key={h} className="font-jetbrains text-[11px] text-[#3a6080] uppercase tracking-wider text-left px-6 py-3 font-medium">{h}</th>
                       ))}
                     </tr>
                   </thead>
                   <tbody className="block md:table-row-group">
                     {starred.map((project) => (
-                      <tr key={project.id} className="flex flex-col md:table-row border-b border-[rgba(0,180,255,0.04)] hover:bg-[rgba(0,180,255,0.03)] transition-colors p-4 md:p-0">
+                      <tr key={project.id} className="group relative flex flex-col md:table-row border-b border-[rgba(0,180,255,0.04)] hover:bg-[rgba(0,180,255,0.03)] transition-colors p-4 md:p-0 cursor-pointer">
                         <td className="block md:table-cell px-0 py-2 md:px-6 md:py-4">
-                          <div className="flex items-center gap-3 w-full">
-                            <div className="w-9 h-9 shrink-0 rounded-lg flex items-center justify-center bg-[rgba(5,13,26,0.4)] border border-[rgba(0,180,255,0.1)] p-1.5 shadow-[0_0_10px_rgba(0,180,255,0.02)]">
-                              <Image 
-                                src={templateLogos[project.template] || "/react.svg"} 
-                                alt={project.template} 
-                                width={22} 
-                                height={22} 
-                                className="object-contain" 
-                              />
-                            </div>
-                            <div className="min-w-0 flex-1">
-                              <Link href={`/playground/${project.id}`} className="text-[14px] font-semibold text-white hover:text-[#00b4ff] transition-colors truncate block">{project.title}</Link>
-                              {project.description && <p className="font-jetbrains text-[11px] text-[#3a6080] line-clamp-1 max-w-[250px] md:max-w-none">{project.description}</p>}
-                            </div>
+                          <Link href={`/playground/${project.id}`} className="absolute inset-0 z-0 rounded-none focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#00b4ff]" aria-label={`Open project ${project.title}`} />
+                          <div className="min-w-0 flex-1">
+                            <span className="text-[14px] font-semibold text-white group-hover:text-[#00b4ff] transition-colors truncate block">{project.title}</span>
+                            {project.description && <p className="font-jetbrains text-[11px] text-[#3a6080] line-clamp-1 max-w-[250px] md:max-w-none">{project.description}</p>}
                           </div>
-                        </td>
-                        <td className="flex md:table-cell items-center gap-2 px-0 py-1 md:px-6 md:py-4">
-                          <span className="font-jetbrains text-[10px] uppercase text-[#3a6080] md:hidden w-[70px] shrink-0">Template:</span>
-                          <span className="font-jetbrains text-[10px] tracking-wider uppercase px-2 py-1 rounded border" style={{ color: templateColors[project.template] || "#00b4ff", borderColor: `${templateColors[project.template] || "#00b4ff"}40`, backgroundColor: `${templateColors[project.template] || "#00b4ff"}10` }}>
-                            {project.template}
-                          </span>
                         </td>
                         <td className="flex md:table-cell items-center gap-2 px-0 py-1 md:px-6 md:py-4 font-jetbrains text-[12px] text-[#7ca8cc]">
                           <span className="font-jetbrains text-[10px] uppercase text-[#3a6080] md:hidden w-[70px] shrink-0">Updated:</span>
@@ -443,8 +418,7 @@ export default function DashboardContent({ user, projects, onDeleteProject, onUp
                           </div>
                         </td>
                         <td className="flex md:table-cell items-center px-0 pt-3 pb-1 md:px-6 md:py-4 mt-2 md:mt-0 border-t border-[rgba(0,180,255,0.04)] md:border-0">
-                          <div className="flex items-center gap-2 w-full justify-end md:justify-start">
-                            <Link href={`/playground/${project.id}`} className="font-jetbrains text-[12px] text-[#7ca8cc] border border-[rgba(0,180,255,0.15)] rounded-md px-4 py-2 min-h-[40px] flex items-center justify-center hover:bg-[rgba(0,180,255,0.08)] hover:text-[#00b4ff] hover:border-[rgba(0,180,255,0.3)] transition-all">Open</Link>
+                          <div className="relative z-10 flex items-center gap-2 w-full justify-end md:justify-start">
                             <DropdownMenu>
                               <DropdownMenuTrigger asChild>
                                 <button className="p-2 rounded-md hover:bg-[rgba(0,180,255,0.08)] transition-colors min-w-[40px] min-h-[40px] flex items-center justify-center"><MoreHorizontal className="w-5 h-5 text-[#3a6080]" /></button>
@@ -489,36 +463,20 @@ export default function DashboardContent({ user, projects, onDeleteProject, onUp
               <table className="block md:table w-full">
                 <thead className="hidden md:table-header-group">
                   <tr className="border-b border-[rgba(0,180,255,0.06)]">
-                    {["Project", "Template", "Updated", "Owner", "Actions"].map(h => (
+                    {["Project", "Updated", "Owner", "Actions"].map(h => (
                       <th key={h} className="font-jetbrains text-[11px] text-[#3a6080] uppercase tracking-wider text-left px-6 py-3 font-medium">{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody className="block md:table-row-group">
                   {projects.map((project) => (
-                    <tr key={project.id} className="flex flex-col md:table-row border-b border-[rgba(0,180,255,0.04)] hover:bg-[rgba(0,180,255,0.03)] transition-colors p-4 md:p-0">
+                    <tr key={project.id} className="group relative flex flex-col md:table-row border-b border-[rgba(0,180,255,0.04)] hover:bg-[rgba(0,180,255,0.03)] transition-colors p-4 md:p-0 cursor-pointer">
                       <td className="block md:table-cell px-0 py-2 md:px-6 md:py-4">
-                        <div className="flex items-center gap-3 w-full">
-                            <div className="w-9 h-9 shrink-0 rounded-lg flex items-center justify-center bg-[rgba(5,13,26,0.4)] border border-[rgba(0,180,255,0.1)] p-1.5 shadow-[0_0_10px_rgba(0,180,255,0.02)]">
-                              <Image 
-                                src={templateLogos[project.template] || "/react.svg"} 
-                                alt={project.template} 
-                                width={22} 
-                                height={22} 
-                                className="object-contain" 
-                              />
-                            </div>
-                          <div className="min-w-0 flex-1">
-                            <Link href={`/playground/${project.id}`} className="text-[14px] font-semibold text-white hover:text-[#00b4ff] transition-colors truncate block">{project.title}</Link>
-                            {project.description && <p className="font-jetbrains text-[11px] text-[#3a6080] line-clamp-1 max-w-[250px] md:max-w-none">{project.description}</p>}
-                          </div>
+                        <Link href={`/playground/${project.id}`} className="absolute inset-0 z-0 rounded-none focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#00b4ff]" aria-label={`Open project ${project.title}`} />
+                        <div className="min-w-0 flex-1">
+                          <span className="text-[14px] font-semibold text-white group-hover:text-[#00b4ff] transition-colors truncate block">{project.title}</span>
+                          {project.description && <p className="font-jetbrains text-[11px] text-[#3a6080] line-clamp-1 max-w-[250px] md:max-w-none">{project.description}</p>}
                         </div>
-                      </td>
-                      <td className="flex md:table-cell items-center gap-2 px-0 py-1 md:px-6 md:py-4">
-                        <span className="font-jetbrains text-[10px] uppercase text-[#3a6080] md:hidden w-[70px] shrink-0">Template:</span>
-                        <span className="font-jetbrains text-[10px] tracking-wider uppercase px-2 py-1 rounded border" style={{ color: templateColors[project.template] || "#00b4ff", borderColor: `${templateColors[project.template] || "#00b4ff"}40`, backgroundColor: `${templateColors[project.template] || "#00b4ff"}10` }}>
-                          {project.template}
-                        </span>
                       </td>
                       <td className="flex md:table-cell items-center gap-2 px-0 py-1 md:px-6 md:py-4 font-jetbrains text-[12px] text-[#7ca8cc]">
                         <span className="font-jetbrains text-[10px] uppercase text-[#3a6080] md:hidden w-[70px] shrink-0">Updated:</span>
@@ -535,8 +493,7 @@ export default function DashboardContent({ user, projects, onDeleteProject, onUp
                         </div>
                       </td>
                       <td className="flex md:table-cell items-center px-0 pt-3 pb-1 md:px-6 md:py-4 mt-2 md:mt-0 border-t border-[rgba(0,180,255,0.04)] md:border-0">
-                        <div className="flex items-center gap-2 w-full justify-end md:justify-start">
-                          <Link href={`/playground/${project.id}`} className="font-jetbrains text-[12px] text-[#7ca8cc] border border-[rgba(0,180,255,0.15)] rounded-md px-4 py-2 min-h-[40px] flex items-center justify-center hover:bg-[rgba(0,180,255,0.08)] hover:text-[#00b4ff] hover:border-[rgba(0,180,255,0.3)] transition-all">Open</Link>
+                        <div className="relative z-10 flex items-center gap-2 w-full justify-end md:justify-start">
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
                               <button className="p-2 rounded-md hover:bg-[rgba(0,180,255,0.08)] transition-colors min-w-[40px] min-h-[40px] flex items-center justify-center"><MoreHorizontal className="w-5 h-5 text-[#3a6080]" /></button>

@@ -1,15 +1,15 @@
 "use server";
 
-import { db } from "@/lib/db";
+import { findPlaygroundById } from "@/lib/db/repositories/playgrounds";
+import { findEnvVarsByPlayground, replaceEnvVarsForPlayground } from "@/lib/db/repositories/playgroundEnvVars";
 import { currentUser } from "@/modules/auth/actions";
 import type { EnvVarPair } from "../lib/env-merge";
 
 export type { EnvVarPair };
 
 async function assertOwner(playgroundId: string, userId: string): Promise<boolean> {
-  const playground = await db.playground.findUnique({
-    where: { id: playgroundId },
-    select: { userId: true },
+  const playground = await findPlaygroundById(playgroundId, {
+    projection: { userId: 1 },
   });
   return playground?.userId === userId;
 }
@@ -26,11 +26,7 @@ export const getPlaygroundEnvVars = async (
   if (!user?.id) return [];
   if (!(await assertOwner(playgroundId, user.id))) return [];
 
-  const rows = await db.playgroundEnvVar.findMany({
-    where: { playgroundId },
-    select: { key: true, value: true },
-  });
-  return rows;
+  return findEnvVarsByPlayground(playgroundId);
 };
 
 /**
@@ -48,12 +44,7 @@ export const setPlaygroundEnvVars = async (
   }
 
   try {
-    await db.playgroundEnvVar.deleteMany({ where: { playgroundId } });
-    if (vars.length > 0) {
-      await db.playgroundEnvVar.createMany({
-        data: vars.map((v) => ({ playgroundId, key: v.key, value: v.value })),
-      });
-    }
+    await replaceEnvVarsForPlayground(playgroundId, vars);
     return { success: true };
   } catch (error) {
     console.error("setPlaygroundEnvVars error:", error);

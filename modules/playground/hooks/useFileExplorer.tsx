@@ -3,7 +3,7 @@ import { toast } from "sonner";
 
 import { TemplateFile, TemplateFolder } from "../lib/path-to-json";
 
-import { generateFileId, getFileDisplayName, findSiblingNameConflict } from "../lib";
+import { getFileDisplayName, findSiblingNameConflict, buildFileId } from "../lib";
 
 interface OpenFile extends TemplateFile {
   id: string;
@@ -28,7 +28,8 @@ interface FileExplorerState {
   setActiveFileId: (fileId: string | null) => void;
 
   //   Functions
-  openFile: (file: TemplateFile, isPreview?: boolean) => void;
+  /** parentPath is the folder the file actually lives in — required so files sharing a name in different folders never alias to the same id. */
+  openFile: (file: TemplateFile, parentPath: string, isPreview?: boolean) => void;
   pinFile: (fileId: string) => void;
   closeFile: (fileId: string) => void;
   closeAllFiles: () => void;
@@ -92,8 +93,8 @@ export const useFileExplorer = create<FileExplorerState>((set, get) => ({
   setOpenFiles: (files) => set({ openFiles: files }),
   setActiveFileId: (fileId) => set({ activeFileId: fileId }),
 
-  openFile: (file, isPreview = true) => {
-    const fileId = generateFileId(file, get().templateData!);
+  openFile: (file, parentPath, isPreview = true) => {
+    const fileId = buildFileId(parentPath, file.filename, file.fileExtension);
     const { openFiles } = get();
     const existingFile = openFiles.find((f) => f.id === fileId);
 
@@ -216,12 +217,11 @@ export const useFileExplorer = create<FileExplorerState>((set, get) => ({
 
       // Sync with web container
       if (writeFileSync) {
-        const fileName = getFileDisplayName(newFile.filename, newFile.fileExtension);
-        const filePath = parentPath ? `${parentPath}/${fileName}` : fileName;
+        const filePath = buildFileId(parentPath, newFile.filename, newFile.fileExtension);
         await writeFileSync(filePath, newFile.content || "");
       }
 
-      get().openFile(newFile);
+      get().openFile(newFile, parentPath);
     } catch (error) {
       console.error("Error adding file:", error);
       toast.error("Failed to create file");
@@ -302,9 +302,11 @@ export const useFileExplorer = create<FileExplorerState>((set, get) => ({
           item.fileExtension !== file.fileExtension
       );
 
-      // Find and close the file if it's open
-      // Use the same ID generation logic as in openFile
-      const fileId = generateFileId(file, templateData);
+      // Find and close the file if it's open. Built from parentPath (the
+      // directory THIS file actually lives in), not a name search across the
+      // whole tree, so deleting e.g. Frontend/.env can never close the
+      // Backend/.env tab instead.
+      const fileId = buildFileId(parentPath, file.filename, file.fileExtension);
       const openFile = openFiles.find((f) => f.id === fileId);
       
       if (openFile) {
@@ -348,12 +350,14 @@ export const useFileExplorer = create<FileExplorerState>((set, get) => ({
           !("folderName" in item) || item.folderName !== folder.folderName
       );
 
-      // Close all files in the deleted folder recursively
+      // Close all files in the deleted folder recursively. currentPath is
+      // tracked directly as the recursion descends, so each file's id is
+      // built from the exact directory it's actually in, not a name search
+      // that could match an identically-named file elsewhere in the tree.
       const closeFilesInFolder = (folder: TemplateFolder, currentPath: string = "") => {
         folder.items.forEach((item) => {
           if ("filename" in item) {
-            // Generate the correct file ID using the same logic as openFile
-            const fileId = generateFileId(item, templateData);
+            const fileId = buildFileId(currentPath, item.filename, item.fileExtension);
             get().closeFile(fileId);
           } else if ("folderName" in item) {
             const newPath = currentPath ? `${currentPath}/${item.folderName}` : item.folderName;
@@ -385,12 +389,11 @@ export const useFileExplorer = create<FileExplorerState>((set, get) => ({
     const { templateData, openFiles, activeFileId } = get();
     if (!templateData) return;
 
-    // Generate old and new file IDs using the same logic as openFile
-    const oldFileId = generateFileId(file, templateData);
-    const cleanParentPath = parentPath.replace(/^\/+/, '');
-    const newFileId = cleanParentPath
-      ? `${cleanParentPath}/${newFilename}.${newExtension}`
-      : `${newFilename}.${newExtension}`;
+    // Built from parentPath (the exact directory this file lives in), not a
+    // name search across the whole tree — otherwise renaming e.g. Frontend/.env
+    // could resolve oldFileId to Backend/.env's id and corrupt that tab instead.
+    const oldFileId = buildFileId(parentPath, file.filename, file.fileExtension);
+    const newFileId = buildFileId(parentPath, newFilename, newExtension);
 
     try {
       const updatedTemplateData = JSON.parse(

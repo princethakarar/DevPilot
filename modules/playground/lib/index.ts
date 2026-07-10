@@ -21,6 +21,33 @@ export function splitFilename(raw: string): { filename: string; fileExtension: s
   return { filename: raw.slice(0, lastDot), fileExtension: raw.slice(lastDot + 1) };
 }
 
+/**
+ * Canonical, unique identity for an open file: its full path from the project
+ * root, "/"-joined. This — not filename+extension alone — is the only thing
+ * that safely distinguishes files that share a name in different folders
+ * (e.g. "Backend/.env" vs "Frontend/.env"). It's used as the openFiles/Monaco
+ * model/WebContainer-fs key everywhere; always construct it from a directly
+ * known parentPath (as every call site here has one in scope), never by
+ * searching the tree for a name match (see findFilePath's warning below).
+ */
+export function buildFileId(parentPath: string, filename: string, fileExtension: string): string {
+  const cleanParentPath = parentPath.replace(/^\/+/, "").replace(/\/+$/, "");
+  const name = getFileDisplayName(filename, fileExtension);
+  return cleanParentPath ? `${cleanParentPath}/${name}` : name;
+}
+
+/**
+ * WARNING — unsafe as a file-identity lookup: this matches purely by
+ * filename+fileExtension, with no awareness of which folder the `file`
+ * argument actually came from. If two files share a name in different
+ * folders (e.g. "Backend/.env" and "Frontend/.env"), this returns the SAME
+ * path (whichever one is encountered first in tree order) for both —
+ * silently aliasing distinct files to one identity. That was a real, shipped
+ * bug (see generateFileId below, previously used for openFile/rename/delete
+ * lookups). Do not use this to compute a file's id/path; if you already know
+ * the parent directory (every caller in useFileExplorer.tsx does), build the
+ * id directly with buildFileId instead.
+ */
 export function findFilePath(
   file: TemplateFile,
   folder: TemplateFolder,
@@ -174,12 +201,6 @@ export function removeItemAtPath(root: TemplateFolder, filePath: string): Templa
 }
 
 /**
- * Generates a unique file ID based on file location in folder structure
- * @param file The template file
- * @param rootFolder The root template folder containing all files
- * @returns A unique file identifier including full path
- */
-/**
  * True if `items` (the entries of a single directory) already contains
  * something named `candidateName`. Comparison is case-insensitive because the
  * underlying filesystem may be case-insensitive (Windows/macOS default), so
@@ -205,6 +226,13 @@ export function findSiblingNameConflict(
   });
 }
 
+/**
+ * WARNING — unsafe as a file-identity lookup: inherits findFilePath's
+ * name-only matching, so it aliases two files sharing a name in different
+ * folders (e.g. "Backend/.env" and "Frontend/.env") to the same id. Kept only
+ * because an existing scratch script (scratch/test-id.ts) references it — no
+ * production code calls it anymore. Use buildFileId instead.
+ */
 export const generateFileId = (file: TemplateFile, rootFolder: TemplateFolder): string => {
   // Find the file's path in the folder structure
   const path = findFilePath(file, rootFolder)?.replace(/^\/+/, '');

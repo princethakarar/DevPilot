@@ -228,7 +228,7 @@ function InlineCreateInput({ kind, level, onConfirm, onCancel, existingItems = [
 
 interface TemplateFileTreeProps {
   data: TemplateItem;
-  onFileSelect?: (file: TemplateFile, isPreview?: boolean) => void;
+  onFileSelect?: (file: TemplateFile, parentPath: string, isPreview?: boolean) => void;
   selectedFile?: TemplateFile;
   title?: string;
   onAddFile?: (file: TemplateFile, parentPath: string) => void;
@@ -412,7 +412,7 @@ export function TemplateFileTree({
 
 interface TemplateNodeProps {
   item: TemplateItem;
-  onFileSelect?: (file: TemplateFile, isPreview?: boolean) => void;
+  onFileSelect?: (file: TemplateFile, parentPath: string, isPreview?: boolean) => void;
   selectedFile?: TemplateFile;
   level: number;
   path?: string;
@@ -501,8 +501,8 @@ function TemplateNode({
       <SidebarMenuItem className="relative group/item">
         <SidebarMenuButton
           isActive={isSelected}
-          onClick={() => onFileSelect?.(file, true)}
-          onDoubleClick={() => onFileSelect?.(file, false)}
+          onClick={() => onFileSelect?.(file, path, true)}
+          onDoubleClick={() => onFileSelect?.(file, path, false)}
           style={isSelected ? { textShadow: "0 0 8px var(--primary)" } : undefined}
           className={cn(
             "w-full flex items-center px-3 py-1.5 text-[13px] rounded-none transition-all duration-200 cursor-pointer font-sans outline-none border-none h-[22px]",
