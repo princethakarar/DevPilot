@@ -41,13 +41,20 @@ export const usePlayground = (id: string): UsePlaygroundReturn => {
   // the durable copy in Mongo (and anything pushed to GitHub) never contains
   // the raw secret text. A playground with no PlaygroundEnvVar rows yet (never
   // migrated, or genuinely has none) is returned untouched.
-  const mergeEnvVars = useCallback(async (data: TemplateFolder): Promise<TemplateFolder> => {
+  //
+  // `storedPath` is the folder the file lived in last time it was saved
+  // (Playground.envFilePath). The loaded tree itself never contains ".env"
+  // (saveTemplateData always strips it before persisting), so `findEnvFile`
+  // on `data` can never recover the original location — using it as the
+  // source of truth here previously caused every reload to silently re-inject
+  // ".env" at the tree root, even when it had been created in a subdirectory.
+  const mergeEnvVars = useCallback(async (data: TemplateFolder, storedPath?: string[] | null): Promise<TemplateFolder> => {
     const vars = await getPlaygroundEnvVars(id);
     hasStoredEnvVars.current = vars.length > 0;
     if (vars.length === 0) return data;
 
-    const existing = findEnvFile(data);
-    return injectEnvFile(data, existing?.path ?? [], serializeEnvContent(vars));
+    const path = storedPath ?? findEnvFile(data)?.path ?? [];
+    return injectEnvFile(data, path, serializeEnvContent(vars));
   }, [id]);
 
   const loadPlayground = useCallback(async () => {
@@ -65,7 +72,7 @@ export const usePlayground = (id: string): UsePlaygroundReturn => {
 
       if (typeof rawContent === "string") {
         const parsedContent = JSON.parse(rawContent);
-        setTemplateData(await mergeEnvVars(parsedContent));
+        setTemplateData(await mergeEnvVars(parsedContent, data?.envFilePath));
         toast.success("playground loaded successfully");
         return;
       }
@@ -90,7 +97,7 @@ export const usePlayground = (id: string): UsePlaygroundReturn => {
           items: [],
         };
       }
-      setTemplateData(await mergeEnvVars(freshData));
+      setTemplateData(await mergeEnvVars(freshData, data?.envFilePath));
       toast.success("Template loaded successfully");
     } catch (error) {
       console.error("Error loading playground:", error);
@@ -111,7 +118,10 @@ export const usePlayground = (id: string): UsePlaygroundReturn => {
 
       if (envFile) {
         const vars = parseEnvContent(envFile.content);
-        await setPlaygroundEnvVars(id, vars);
+        // Persist the folder it lives in alongside the vars — the tree we're
+        // about to save never contains ".env" itself (stripped below), so
+        // this is the only record of its location for the next reload.
+        await setPlaygroundEnvVars(id, vars, envFile.path);
         hasStoredEnvVars.current = vars.length > 0;
         treeToPersist = stripEnvFile(data);
       } else if (hasStoredEnvVars.current) {

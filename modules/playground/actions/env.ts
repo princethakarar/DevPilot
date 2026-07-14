@@ -1,6 +1,6 @@
 "use server";
 
-import { findPlaygroundById } from "@/lib/db/repositories/playgrounds";
+import { findPlaygroundById, updatePlaygroundEnvFilePath } from "@/lib/db/repositories/playgrounds";
 import { findEnvVarsByPlayground, replaceEnvVarsForPlayground } from "@/lib/db/repositories/playgroundEnvVars";
 import { currentUser } from "@/modules/auth/actions";
 import type { EnvVarPair } from "../lib/env-merge";
@@ -32,10 +32,16 @@ export const getPlaygroundEnvVars = async (
 /**
  * Replace the full set of env vars for a playground. Passing an empty array
  * clears all of them (used when the user deletes/empties the .env file).
+ *
+ * `path` is the folder (from tree root, exclusive) the ".env" file lives in.
+ * It's persisted on the Playground doc — not derivable from the tree on
+ * reload, since the tree never contains ".env" once it's been stripped out
+ * here. Pass `null` (or omit) for a root-level ".env", or when clearing vars.
  */
 export const setPlaygroundEnvVars = async (
   playgroundId: string,
-  vars: EnvVarPair[]
+  vars: EnvVarPair[],
+  path?: string[] | null
 ): Promise<{ success: boolean; error?: string }> => {
   const user = await currentUser();
   if (!user?.id) return { success: false, error: "Not authenticated" };
@@ -45,6 +51,7 @@ export const setPlaygroundEnvVars = async (
 
   try {
     await replaceEnvVarsForPlayground(playgroundId, vars);
+    await updatePlaygroundEnvFilePath(playgroundId, vars.length > 0 ? path ?? [] : null);
     return { success: true };
   } catch (error) {
     console.error("setPlaygroundEnvVars error:", error);

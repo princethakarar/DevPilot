@@ -86,6 +86,8 @@ export const PlaygroundSchema = z.object({
   githubRepo: z.string().nullable(),
   githubBranch: z.string().nullable(),
   githubBaseContent: z.string().nullable(),
+  /** Folder path (from tree root, exclusive) the project's ".env" file lives in — see PlaygroundEnvVar. Null/absent means root, or never set (legacy docs). */
+  envFilePath: z.array(z.string()).nullable(),
   userId: z.string().min(1),
   createdAt: z.date(),
   updatedAt: z.date(),
@@ -99,6 +101,7 @@ export const PlaygroundCreateInputSchema = z.object({
   githubRepo: z.string().nullish(),
   githubBranch: z.string().nullish(),
   githubBaseContent: z.string().nullish(),
+  envFilePath: z.array(z.string()).nullish(),
   userId: z.string().min(1),
 });
 export type PlaygroundCreateInput = z.input<typeof PlaygroundCreateInputSchema>;

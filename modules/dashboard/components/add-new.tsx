@@ -10,12 +10,13 @@ import { useState } from "react"
 import { toast } from "sonner";
 import TemplateSelectingModal from "./template-selecting-modal";
 import { createPlayground } from "../actions";
+import type { Templates } from "@/lib/db/schemas";
 
 const AddNewButton = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedTemplate, setSelectedTemplate] = useState<{
     title: string;
-    template: "NODE";
+    template: Templates;
     description?: string;
   } | null>(null)
   const router = useRouter()
@@ -23,7 +24,7 @@ const AddNewButton = () => {
 
   const handleSubmit = async (data: {
     title: string;
-    template: "NODE";
+    template: Templates;
     description?: string;
   }) => {
     setSelectedTemplate(data);
@@ -32,16 +33,18 @@ const AddNewButton = () => {
     
     if (res?.error) {
       toast.error(res.error);
-      return;
+      return false;
     }
 
     if (res?.playground?.id) {
       toast.success("Playground Created successfully");
       setIsModalOpen(false);
       router.push(`/playground/${res.playground.id}`);
-    } else {
-      toast.error("Failed to create playground. Please try again.");
+      return true;
     }
+
+    toast.error("Failed to create playground. Please try again.");
+    return false;
   };
 
 

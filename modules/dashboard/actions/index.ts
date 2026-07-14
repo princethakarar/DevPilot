@@ -80,6 +80,7 @@ export const createPlayground = async (data: {
       userId: user.id,
     });
 
+    revalidatePath("/dashboard");
     return { playground };
   } catch (error) {
     console.error("Error creating playground:", error);

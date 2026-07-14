@@ -2,7 +2,9 @@
 
 import { useEffect, useRef } from "react";
 import type { WebContainer } from "@webcontainer/api";
+import { toast } from "sonner";
 import type { TemplateFolder, TemplateItem } from "@/modules/playground/lib/path-to-json";
+import { fallbackToNpmInstall } from "@/lib/snapshot/loader";
 import {
   computePackageJsonHash,
   tryRestoreNodeModules,
@@ -22,6 +24,18 @@ function findPackageJsonContent(folder: TemplateFolder): string | null {
   return null;
 }
 
+function hasDeclaredDependencies(pkgJson: string): boolean {
+  try {
+    const parsed = JSON.parse(pkgJson);
+    return (
+      Object.keys(parsed.dependencies ?? {}).length > 0 ||
+      Object.keys(parsed.devDependencies ?? {}).length > 0
+    );
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Best-effort node_modules persistence across refreshes AND across different
  * playgrounds. Call only once the project's own files have already been
@@ -32,6 +46,11 @@ function findPackageJsonContent(folder: TemplateFolder): string | null {
  * node-modules-persistence.ts), so a brand new playground built from the same
  * starter template as one already installed elsewhere restores instantly
  * instead of paying a fresh `npm install`.
+ *
+ * If nothing is cached and the template declares real dependencies, this also
+ * kicks off `npm install` automatically (toast-driven progress) so the user
+ * never has to type it themselves — the freshly-installed tree then gets
+ * captured into the cache below for the next playground that needs it.
  *
  * See node-modules-persistence.ts for what this can and can't actually do —
  * short version: WebContainer can't reconnect to a prior instance across a
@@ -69,6 +88,24 @@ export function useNodeModulesPersistence(
         cleanupWatch = watchForInstallCompletion(instance, () => {
           captureAndStoreNodeModules(instance, pkgHash).catch(() => {});
         });
+
+        // Nothing cached and this template actually has dependencies — install
+        // automatically instead of leaving the user to type `npm install`
+        // themselves. The plain Node starter has none, so it's skipped entirely.
+        if (!restored && hasDeclaredDependencies(pkgJson)) {
+          const toastId = toast.info("Installing dependencies…");
+          const result = await fallbackToNpmInstall(instance, () => {});
+          if (cancelled) return;
+
+          if (result.ok) {
+            toast.success("Dependencies installed", { id: toastId });
+          } else {
+            toast.error(
+              "Automatic install failed — run npm install manually in the terminal",
+              { id: toastId }
+            );
+          }
+        }
       } catch (err) {
         console.warn("[DevPilot] node_modules persistence setup failed (non-fatal):", err);
       }

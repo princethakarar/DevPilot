@@ -41,10 +41,10 @@ export async function findPlaygroundByUserAndTitle(
 export async function findPlaygroundSummaryWithTemplateFiles(
   id: string,
   client: DbClient = getMongoDbClient()
-): Promise<Pick<Playground, "title" | "githubRepo" | "githubBranch"> & { templateFiles: { content: unknown }[] } | null> {
+): Promise<Pick<Playground, "title" | "githubRepo" | "githubBranch" | "envFilePath"> & { templateFiles: { content: unknown }[] } | null> {
   const playground = await findPlaygroundById(
     id,
-    { projection: { title: 1, githubRepo: 1, githubBranch: 1 } },
+    { projection: { title: 1, githubRepo: 1, githubBranch: 1, envFilePath: 1 } },
     client
   );
   if (!playground) return null;
@@ -53,6 +53,7 @@ export async function findPlaygroundSummaryWithTemplateFiles(
     title: playground.title,
     githubRepo: playground.githubRepo,
     githubBranch: playground.githubBranch,
+    envFilePath: playground.envFilePath ?? null,
     templateFiles: templateFiles.map((f) => ({ content: f.content })),
   };
 }
@@ -118,6 +119,7 @@ export async function createPlayground(
     githubRepo: parsed.githubRepo ?? null,
     githubBranch: parsed.githubBranch ?? null,
     githubBaseContent: parsed.githubBaseContent ?? null,
+    envFilePath: parsed.envFilePath ?? null,
     userId: parsed.userId,
     createdAt: now,
     updatedAt: now,
@@ -143,6 +145,20 @@ export async function updatePlaygroundGithubBaseContent(
   client: DbClient = getMongoDbClient()
 ): Promise<void> {
   await client.updateOne(COLLECTIONS.Playground, { _id: id }, { $set: { githubBaseContent, updatedAt: new Date() } });
+}
+
+/**
+ * Remembers which folder the project's ".env" lives in, since saveTemplateData
+ * strips the file out of the persisted tree (see PlaygroundEnvVar) — without
+ * this, a reload has no way to know the file used to live in a subdirectory
+ * and always re-injects it at the tree root.
+ */
+export async function updatePlaygroundEnvFilePath(
+  id: string,
+  envFilePath: string[] | null,
+  client: DbClient = getMongoDbClient()
+): Promise<void> {
+  await client.updateOne(COLLECTIONS.Playground, { _id: id }, { $set: { envFilePath, updatedAt: new Date() } });
 }
 
 export async function updatePlayground(

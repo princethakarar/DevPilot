@@ -13,6 +13,7 @@ export interface User {
     title: string
     description: string | null
     template: string
+    githubRepo?: string | null
     createdAt: Date
     updatedAt: Date
     userId: string

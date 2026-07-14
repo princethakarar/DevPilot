@@ -24,10 +24,9 @@ import LogoutButton from "@/modules/auth/components/logout-button";
 import HeroCanvas from "@/modules/home/landing/hero-canvas";
 import { signIn } from "next-auth/react";
 import { disconnectProvider } from "@/modules/auth/actions";
+import type { Templates } from "@/lib/db/schemas";
 
-// New Project card is hidden for now (GitHub import is the primary path); flip to true to re-enable.
-// Underlying creation flow (modal, handler, route) is untouched.
-const SHOW_NEW_PROJECT = false;
+const SHOW_NEW_PROJECT = true;
 
 interface DashboardContentProps {
   user: { 
@@ -117,15 +116,16 @@ export default function DashboardContent({ user, projects, onDeleteProject, onUp
     }
   };
 
-  const handleCreateProject = async (data: { title: string; template: "NODE"; description?: string }) => {
+  const handleCreateProject = async (data: { title: string; template: Templates; description?: string }) => {
     const res = await createPlayground(data);
     if (res?.error) {
       toast.error(res.error);
-      return;
+      return false;
     }
     toast.success("Playground Created successfully");
     setIsModalOpen(false);
     router.push(`/playground/${res.playground?.id}`);
+    return true;
   };
 
   const handleEditClick = (project: Project) => { setSelectedProject(project); setEditData({ title: project.title, description: project.description || "" }); setEditDialogOpen(true); };
@@ -328,7 +328,8 @@ export default function DashboardContent({ user, projects, onDeleteProject, onUp
       </nav>
 
       {/* ─── MAIN CONTENT ─── */}
-      <div className="max-w-[1200px] mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
+      <div className="w-full flex justify-center">
+      <div className="w-full max-w-[1320px] px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
 
 
 
@@ -385,11 +386,16 @@ export default function DashboardContent({ user, projects, onDeleteProject, onUp
                 </h2>
               </div>
               <div className="w-full">
-                <table className="block md:table w-full">
+                <table className="block md:table md:table-fixed w-full">
                   <thead className="hidden md:table-header-group">
                     <tr className="border-b border-[rgba(0,180,255,0.06)]">
-                      {["Project", "Updated", "Owner", "Actions"].map(h => (
-                        <th key={h} className="font-jetbrains text-[11px] text-[#3a6080] uppercase tracking-wider text-left px-6 py-3 font-medium">{h}</th>
+                      {[
+                        { label: "Project", width: "md:w-[42%]" },
+                        { label: "Updated", width: "md:w-[16%]" },
+                        { label: "Owner", width: "md:w-[22%]" },
+                        { label: "Actions", width: "md:w-[20%]" },
+                      ].map(({ label, width }) => (
+                        <th key={label} className={`font-jetbrains text-[11px] text-[#3a6080] uppercase tracking-wider text-left px-6 py-3 font-medium ${width}`}>{label}</th>
                       ))}
                     </tr>
                   </thead>
@@ -447,53 +453,62 @@ export default function DashboardContent({ user, projects, onDeleteProject, onUp
         })()}
 
         {/* ─── RECENT PROJECTS ─── */}
-        <div className="rounded-xl border border-[rgba(0,180,255,0.1)] bg-[rgba(7,17,31,0.5)] overflow-hidden">
-          <div className="flex items-center justify-between px-4 sm:px-6 py-4 border-b border-[rgba(0,180,255,0.08)]">
+        <div className="w-full rounded-xl border border-[rgba(0,180,255,0.1)] bg-[rgba(7,17,31,0.5)] overflow-hidden">
+          <div className="flex items-center justify-between px-4 md:px-7 py-4 border-b border-[rgba(0,180,255,0.08)]">
             <h2 className="text-base sm:text-[16px] font-bold text-white">Recent Projects</h2>
           </div>
 
           {projects.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-16 px-4 text-center">
+            <div className="w-full flex flex-col items-center justify-center py-16 px-4 text-center">
               <FolderOpen className="w-10 h-10 sm:w-12 sm:h-12 text-[#3a6080] mb-4" />
               <h3 className="text-[14px] sm:text-[16px] font-semibold text-[#7ca8cc] mb-1">No projects found</h3>
               <p className="font-jetbrains text-[11px] sm:text-[13px] text-[#3a6080]">Create a new project to get started!</p>
             </div>
           ) : (
             <div className="w-full">
-              <table className="block md:table w-full">
-                <thead className="hidden md:table-header-group">
-                  <tr className="border-b border-[rgba(0,180,255,0.06)]">
-                    {["Project", "Updated", "Owner", "Actions"].map(h => (
-                      <th key={h} className="font-jetbrains text-[11px] text-[#3a6080] uppercase tracking-wider text-left px-6 py-3 font-medium">{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody className="block md:table-row-group">
+              {/*
+                CSS grid instead of an HTML table: a semantic <table> with
+                table-layout:fixed sized its columns off header-cell percentage
+                widths (42/16/22/20%), which meant PROJECT (the widest %) grew
+                far past what short project names need, stranding UPDATED/OWNER/
+                ACTIONS near the right edge with a dead gap in between. Fixed
+                pixel tracks for the three secondary columns (sized to what their
+                content actually needs) + a flexible first column removes that
+                gap regardless of row content length.
+              */}
+              <div role="table" aria-label="Recent projects" className="w-full">
+                <div role="rowgroup" className="hidden md:grid md:grid-cols-[minmax(0,1fr)_140px_220px_96px] border-b border-[rgba(0,180,255,0.06)]">
+                  <div role="columnheader" className="font-jetbrains text-[11px] text-[#3a6080] uppercase tracking-wider text-left md:px-7 py-3 font-medium">Project</div>
+                  <div role="columnheader" className="font-jetbrains text-[11px] text-[#3a6080] uppercase tracking-wider text-center px-4 py-3 font-medium">Updated</div>
+                  <div role="columnheader" className="font-jetbrains text-[11px] text-[#3a6080] uppercase tracking-wider text-center px-4 py-3 font-medium">Owner</div>
+                  <div role="columnheader" className="font-jetbrains text-[11px] text-[#3a6080] uppercase tracking-wider text-center px-4 py-3 font-medium">Actions</div>
+                </div>
+                <div role="rowgroup">
                   {projects.map((project) => (
-                    <tr key={project.id} className="group relative flex flex-col md:table-row border-b border-[rgba(0,180,255,0.04)] hover:bg-[rgba(0,180,255,0.03)] transition-colors p-4 md:p-0 cursor-pointer">
-                      <td className="block md:table-cell px-0 py-2 md:px-6 md:py-4">
+                    <div role="row" key={project.id} className="group relative flex flex-col md:grid md:grid-cols-[minmax(0,1fr)_140px_220px_96px] border-b border-[rgba(0,180,255,0.04)] hover:bg-[rgba(0,180,255,0.03)] transition-colors p-4 md:p-0 cursor-pointer">
+                      <div role="cell" className="px-0 py-2 md:px-7 md:py-3">
                         <Link href={`/playground/${project.id}`} className="absolute inset-0 z-0 rounded-none focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#00b4ff]" aria-label={`Open project ${project.title}`} />
-                        <div className="min-w-0 flex-1">
+                        <div className="min-w-0 flex-1 flex flex-col gap-0.5">
                           <span className="text-[14px] font-semibold text-white group-hover:text-[#00b4ff] transition-colors truncate block">{project.title}</span>
                           {project.description && <p className="font-jetbrains text-[11px] text-[#3a6080] line-clamp-1 max-w-[250px] md:max-w-none">{project.description}</p>}
                         </div>
-                      </td>
-                      <td className="flex md:table-cell items-center gap-2 px-0 py-1 md:px-6 md:py-4 font-jetbrains text-[12px] text-[#7ca8cc]">
+                      </div>
+                      <div role="cell" className="flex items-center gap-2 px-0 py-1 md:justify-center md:px-4 md:py-3 font-jetbrains text-[12px] text-[#7ca8cc]">
                         <span className="font-jetbrains text-[10px] uppercase text-[#3a6080] md:hidden w-[70px] shrink-0">Updated:</span>
                         {format(new Date(project.createdAt), "MMM dd, yyyy")}
-                      </td>
-                      <td className="hidden md:table-cell px-6 py-4">
+                      </div>
+                      <div role="cell" className="hidden md:flex md:items-center md:justify-center md:px-4 md:py-3">
                         <div className="flex items-center gap-2">
                           {project.user.image ? (
-                            <Image src={project.user.image} alt={project.user.name || "User"} width={24} height={24} className="w-6 h-6 rounded-full border border-[rgba(0,180,255,0.15)]" />
+                            <Image src={project.user.image} alt={project.user.name || "User"} width={24} height={24} className="w-6 h-6 rounded-full border border-[rgba(0,180,255,0.15)] shrink-0" />
                           ) : (
-                            <div className="w-6 h-6 rounded-full bg-[#1a5faa] flex items-center justify-center text-white text-[10px] font-bold">{(project.user.name || "U").charAt(0)}</div>
+                            <div className="w-6 h-6 rounded-full bg-[#1a5faa] flex items-center justify-center text-white text-[10px] font-bold shrink-0">{(project.user.name || "U").charAt(0)}</div>
                           )}
-                          <span className="font-jetbrains text-[12px] text-[#7ca8cc]">{project.user.name}</span>
+                          <span className="font-jetbrains text-[12px] text-[#7ca8cc] truncate max-w-[130px]">{project.user.name}</span>
                         </div>
-                      </td>
-                      <td className="flex md:table-cell items-center px-0 pt-3 pb-1 md:px-6 md:py-4 mt-2 md:mt-0 border-t border-[rgba(0,180,255,0.04)] md:border-0">
-                        <div className="relative z-10 flex items-center gap-2 w-full justify-end md:justify-start">
+                      </div>
+                      <div role="cell" className="flex items-center px-0 pt-3 pb-1 md:justify-center md:px-4 md:py-3 mt-2 md:mt-0 border-t border-[rgba(0,180,255,0.04)] md:border-0">
+                        <div className="relative z-10 flex items-center gap-2 w-full justify-end md:justify-center">
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
                               <button className="p-2 rounded-md hover:bg-[rgba(0,180,255,0.08)] transition-colors min-w-[40px] min-h-[40px] flex items-center justify-center"><MoreHorizontal className="w-5 h-5 text-[#3a6080]" /></button>
@@ -511,11 +526,11 @@ export default function DashboardContent({ user, projects, onDeleteProject, onUp
                             </DropdownMenuContent>
                           </DropdownMenu>
                         </div>
-                      </td>
-                    </tr>
+                      </div>
+                    </div>
                   ))}
-                </tbody>
-              </table>
+                </div>
+              </div>
               {projects.length > 0 && (
                 <div className="text-center py-3 font-jetbrains text-[11px] text-[#3a6080] border-t border-[rgba(0,180,255,0.06)]">
                   Showing {projects.length} of {projects.length} projects
@@ -524,6 +539,7 @@ export default function DashboardContent({ user, projects, onDeleteProject, onUp
             </div>
           )}
         </div>
+      </div>
       </div>
 
       {/* ─── MODALS ─── */}
