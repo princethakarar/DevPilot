@@ -153,6 +153,22 @@ export async function updatePlaygroundGithubBaseContent(
  * this, a reload has no way to know the file used to live in a subdirectory
  * and always re-injects it at the tree root.
  */
+/**
+ * Links a newly-created GitHub repo to a template-originated playground.
+ * Deliberately does NOT touch githubBaseContent — leaving it null means the
+ * next commitChangesToGithub() diff naturally treats every current file as
+ * "added", which is exactly what the first push (or a retry after a failed
+ * first push) needs, with no separate bootstrap-content bookkeeping.
+ */
+export async function updatePlaygroundGithubRepo(
+  id: string,
+  githubRepo: string,
+  githubBranch: string,
+  client: DbClient = getMongoDbClient()
+): Promise<void> {
+  await client.updateOne(COLLECTIONS.Playground, { _id: id }, { $set: { githubRepo, githubBranch, updatedAt: new Date() } });
+}
+
 export async function updatePlaygroundEnvFilePath(
   id: string,
   envFilePath: string[] | null,

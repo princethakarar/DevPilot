@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
+import { signIn } from "next-auth/react";
 import type { WebContainer } from "@webcontainer/api";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -16,11 +17,15 @@ import {
   FileWarning,
   RefreshCw,
   RotateCcw,
+  Plus,
 } from "lucide-react";
 import { commitChangesToGithub, discardFileChanges } from "@/modules/playground/actions/commit";
+import { checkGithubLink } from "@/modules/dashboard/actions/github";
 import { useSourceControl, type ChangeEntry, type ChangeStatus } from "@/modules/playground/hooks/useSourceControl";
 import { useFileExplorer } from "@/modules/playground/hooks/useFileExplorer";
 import { DeleteDialog } from "./dialogs/delete-dialog";
+import { CreateGithubRepoModal } from "./dialogs/create-github-repo-modal";
+import { GitHubIcon } from "@/modules/dashboard/lib/template-icons";
 
 interface SourceControlPanelProps {
   playgroundId: string;
@@ -30,6 +35,11 @@ interface SourceControlPanelProps {
   writeFileSync?: (path: string, content: string) => Promise<void>;
   /** Called after a successful push, so the host can refresh its own change-state. */
   onCommitted?: () => void;
+  /** Pre-fill values for the "Create GitHub Repository" modal. */
+  projectTitle?: string;
+  projectDescription?: string | null;
+  /** Called once a repo is created+linked, so the host can refresh playgroundData (flips this panel to Commit/Push). */
+  onRepoLinked?: () => void;
 }
 
 /**
@@ -49,6 +59,9 @@ export function SourceControlPanel({
   instance,
   writeFileSync,
   onCommitted,
+  projectTitle,
+  projectDescription,
+  onRepoLinked,
 }: SourceControlPanelProps) {
   const hasGithubRepo = !!(githubRepo && githubBranch);
   const { changes, isLoading, refreshChanges } = useSourceControl();
@@ -59,10 +72,26 @@ export function SourceControlPanel({
   const [isPushing, setIsPushing] = useState(false);
   const [discardTarget, setDiscardTarget] = useState<ChangeEntry | null>(null);
   const [isDiscarding, setIsDiscarding] = useState(false);
+  // Only meaningful while there's no repo linked yet — decides between the
+  // "Link with GitHub" and "Create GitHub Repository" empty states below.
+  // null = still checking, so neither empty state flashes incorrectly first.
+  const [githubAccountLinked, setGithubAccountLinked] = useState<boolean | null>(null);
+  const [isCreateRepoModalOpen, setIsCreateRepoModalOpen] = useState(false);
 
   useEffect(() => {
     refreshChanges(playgroundId);
   }, [playgroundId, refreshChanges]);
+
+  useEffect(() => {
+    if (hasGithubRepo) return;
+    let cancelled = false;
+    checkGithubLink().then((result) => {
+      if (!cancelled) setGithubAccountLinked(result.linked);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [hasGithubRepo]);
 
   const hasChanges = changes.length > 0;
 
@@ -86,7 +115,16 @@ export function SourceControlPanel({
       await refreshChanges(playgroundId);
       onCommitted?.();
     } else {
-      toast.error(result.error || "Failed to push changes");
+      // pendingCommitMessage/commitMessage are deliberately left untouched on
+      // failure — the user shouldn't have to retype the commit message to retry.
+      toast.error(result.error || "Failed to push changes", {
+        action: result.needsReauth
+          ? {
+              label: "Reconnect GitHub",
+              onClick: () => signIn("github", { callbackUrl: `/playground/${playgroundId}` }),
+            }
+          : undefined,
+      });
     }
     setIsPushing(false);
   };
@@ -154,13 +192,62 @@ export function SourceControlPanel({
   };
 
   if (!hasGithubRepo) {
+    if (githubAccountLinked === null) {
+      // Still checking — avoid flashing either empty state before we know which applies.
+      return (
+        <div className="flex items-center justify-center h-full">
+          <Loader2 className="h-5 w-5 animate-spin text-muted-foreground/40" />
+        </div>
+      );
+    }
+
+    if (!githubAccountLinked) {
+      return (
+        <div className="flex flex-col items-center justify-center h-full px-6 text-center gap-3">
+          <GitHubIcon className="h-8 w-8 text-muted-foreground/40" />
+          <p className="text-xs text-muted-foreground">
+            Connect your GitHub account to publish this project.
+          </p>
+          <Button
+            size="sm"
+            className="h-7 text-xs bg-[#24292e] hover:bg-[#2f363d] text-white border border-[rgba(255,255,255,0.1)]"
+            onClick={() => signIn("github", { callbackUrl: `/playground/${playgroundId}` })}
+          >
+            <GitHubIcon className="h-3.5 w-3.5 mr-1.5" />
+            Link with GitHub
+          </Button>
+        </div>
+      );
+    }
+
     return (
-      <div className="flex flex-col items-center justify-center h-full px-6 text-center gap-2">
-        <Globe className="h-8 w-8 text-muted-foreground/40" />
-        <p className="text-xs text-muted-foreground">
-          No GitHub repository linked to this playground.
-        </p>
-      </div>
+      <>
+        <div className="flex flex-col items-center justify-center h-full px-6 text-center gap-3">
+          <Globe className="h-8 w-8 text-muted-foreground/40" />
+          <p className="text-xs text-muted-foreground">
+            This project isn&apos;t on GitHub yet.
+          </p>
+          <Button
+            size="sm"
+            className="h-7 text-xs bg-gradient-to-r from-[#1a5faa] to-[#00b4ff] hover:from-[#154e8c] hover:to-[#009cd9] text-white"
+            onClick={() => setIsCreateRepoModalOpen(true)}
+          >
+            <Plus className="h-3.5 w-3.5 mr-1.5" />
+            Create GitHub Repository
+          </Button>
+        </div>
+        <CreateGithubRepoModal
+          isOpen={isCreateRepoModalOpen}
+          onClose={() => setIsCreateRepoModalOpen(false)}
+          playgroundId={playgroundId}
+          defaultName={projectTitle}
+          defaultDescription={projectDescription}
+          onCreated={() => {
+            setIsCreateRepoModalOpen(false);
+            onRepoLinked?.();
+          }}
+        />
+      </>
     );
   }
 

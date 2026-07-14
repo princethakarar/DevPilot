@@ -52,7 +52,7 @@ const MainPlaygroundPage = () => {
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [highlightCurrentLine, setHighlightCurrentLine] = useState(true);
 
-  const { playgroundData, templateData, isLoading, error, saveTemplateData } =
+  const { playgroundData, templateData, isLoading, error, saveTemplateData, loadPlayground } =
     usePlayground(id);
 
     const aiSuggestions = useAISuggestions();
@@ -486,6 +486,9 @@ const MainPlaygroundPage = () => {
             githubBranch={playgroundData?.githubBranch}
             instance={instance}
             writeFileSync={writeFileSync}
+            projectTitle={playgroundData?.title}
+            projectDescription={playgroundData?.description}
+            onRepoLinked={loadPlayground}
           />
         }
         explorerContent={
