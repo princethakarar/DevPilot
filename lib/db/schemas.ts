@@ -157,6 +157,96 @@ export const TemplateFileCreateInputSchema = z.object({
 });
 export type TemplateFileCreateInput = z.infer<typeof TemplateFileCreateInputSchema>;
 
+// ---- AgentRun ----
+// Autonomous coding-agent task runs (see lib/ai/agent/orchestrator.ts). One
+// document per run; the activity log is embedded so the live panel and any
+// later "what happened" review read from a single doc, no join needed.
+export const AgentRunStatusSchema = z.enum([
+  "running",
+  "completed",
+  "blocked",
+  "capped",
+  "stopped",
+  "failed",
+]);
+export type AgentRunStatus = z.infer<typeof AgentRunStatusSchema>;
+
+export const AgentRunLogEntrySchema = z.object({
+  ts: z.date(),
+  type: z.enum(["status", "model", "tool_call", "tool_result", "checkpoint", "error"]),
+  message: z.string(),
+  detail: z.unknown().nullish(),
+});
+export type AgentRunLogEntry = z.infer<typeof AgentRunLogEntrySchema>;
+
+export const AgentRunSchema = z.object({
+  id: z.string().min(1),
+  playgroundId: z.string().min(1),
+  userId: z.string().min(1),
+  task: z.string().min(1),
+  status: AgentRunStatusSchema,
+  log: z.array(AgentRunLogEntrySchema),
+  iterationCount: z.number().int().default(0),
+  toolCallCount: z.number().int().default(0),
+  approxTokens: z.number().int().default(0),
+  /** Set as soon as a Stop is requested; the loop polls this between steps and
+   *  halts at the next safe boundary rather than mid tool-call. */
+  stopRequested: z.boolean().default(false),
+  checkpointBeforeId: z.string().nullable(),
+  checkpointAfterId: z.string().nullable(),
+  summary: z.string().nullable(),
+  blockedReason: z.string().nullable(),
+  startedAt: z.date(),
+  endedAt: z.date().nullable(),
+});
+export type AgentRun = z.infer<typeof AgentRunSchema>;
+
+export const AgentRunCreateInputSchema = z.object({
+  playgroundId: z.string().min(1),
+  userId: z.string().min(1),
+  task: z.string().min(1),
+});
+export type AgentRunCreateInput = z.infer<typeof AgentRunCreateInputSchema>;
+
+// ---- ProjectCheckpoint ----
+// Short-term rollback safety net for the autonomous agent (lib/checkpoint/store.ts)
+// — the sole safety net for a mode that auto-applies every file edit with no
+// pause gate, so this lives in the same durable database as the actual
+// project files, not a cache-oriented store. A single embedded document per
+// checkpoint (files array inline): the live project store this snapshots is
+// itself already one Mongo document per project capped at 16MB, so a
+// checkpoint can never exceed what already fits there. Expiry is a TTL index
+// on `createdAt` (see scripts/ensure-checkpoint-indexes.ts) — MongoDB's TTL
+// background monitor runs roughly every 60s, so a checkpoint may remain
+// readable up to ~60s past its nominal TTL. That's accepted as-is, not
+// worked around with exact-time filtering in application code.
+export const ProjectCheckpointFileSchema = z.object({
+  path: z.string().min(1),
+  content: z.string(),
+  encoding: z.enum(["base64"]).nullish(),
+});
+export type ProjectCheckpointFile = z.infer<typeof ProjectCheckpointFileSchema>;
+
+export const ProjectCheckpointSchema = z.object({
+  id: z.string().min(1),
+  projectId: z.string().min(1),
+  label: z.string(),
+  reason: z.string(),
+  rootFolderName: z.string(),
+  files: z.array(ProjectCheckpointFileSchema),
+  createdAt: z.date(),
+});
+export type ProjectCheckpoint = z.infer<typeof ProjectCheckpointSchema>;
+
+export const ProjectCheckpointCreateInputSchema = z.object({
+  projectId: z.string().min(1),
+  label: z.string(),
+  reason: z.string(),
+  rootFolderName: z.string(),
+  files: z.array(ProjectCheckpointFileSchema),
+});
+export type ProjectCheckpointCreateInput = z.infer<typeof ProjectCheckpointCreateInputSchema>;
+
 // ---- ChatMessage ----
 // No call sites reference this model anywhere in the app (see
 // MIGRATION_INVENTORY.md) — kept for schema parity only.

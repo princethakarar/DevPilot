@@ -11,4 +11,8 @@ export const COLLECTIONS = {
   StarMark: "StarMark",
   TemplateFile: "TemplateFile",
   ChatMessage: "ChatMessage",
+  AgentRun: "AgentRun",
+  // Deliberately snake_case, unlike every other collection here — matches
+  // the migration spec's explicit literal name for this collection.
+  ProjectCheckpoint: "project_checkpoints",
 } as const;

@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import { Bot } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { FilesIcon, SourceControlIcon } from "./codicons";
 import { useSourceControl } from "@/modules/playground/hooks/useSourceControl";
@@ -8,6 +9,7 @@ import { useSourceControl } from "@/modules/playground/hooks/useSourceControl";
 interface IdeSidebarProps {
   children?: React.ReactNode;
   sourceControlContent?: React.ReactNode;
+  agentContent?: React.ReactNode;
   activeTab: string;
 }
 
@@ -77,12 +79,19 @@ export function IdeActivityBar({ activeTab, setActiveTab }: IdeActivityBarProps)
           >
             <SourceControlIcon className="w-6 h-6" />
           </RailButton>
+          <RailButton
+            isActive={activeTab === "agent"}
+            title="Autonomous Agent"
+            onClick={() => setActiveTab("agent")}
+          >
+            <Bot className="w-5 h-5" />
+          </RailButton>
         </div>
     </div>
   );
 }
 
-export function IdeSidebar({ children, sourceControlContent, activeTab }: IdeSidebarProps) {
+export function IdeSidebar({ children, sourceControlContent, agentContent, activeTab }: IdeSidebarProps) {
   return (
     <div className="flex-1 flex flex-col min-w-0 bg-sidebar h-full overflow-hidden border-r border-border">
         {activeTab === "explorer" && (
@@ -93,6 +102,11 @@ export function IdeSidebar({ children, sourceControlContent, activeTab }: IdeSid
         {activeTab === "source-control" && (
           <div className="flex-1 overflow-hidden h-full">
             {sourceControlContent}
+          </div>
+        )}
+        {activeTab === "agent" && (
+          <div className="flex-1 overflow-hidden h-full">
+            {agentContent}
           </div>
         )}
       </div>

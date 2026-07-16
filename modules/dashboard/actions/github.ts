@@ -5,6 +5,7 @@ import { createPlaygroundWithTemplateFile } from "@/lib/db/repositories/playgrou
 import { currentUser } from "@/modules/auth/actions";
 import { revalidatePath } from "next/cache";
 import { BINARY_FILE_EXTENSIONS as BINARY_EXTENSIONS } from "@/modules/playground/lib/binary-extensions";
+import { buildTemplateFolderFromPaths } from "../lib/build-template-folder";
 
 // Max file size to import (100KB)
 const MAX_FILE_SIZE = 100 * 1024;
@@ -248,51 +249,3 @@ export async function importGithubRepository(
   }
 }
 
-/**
- * Build a TemplateFolder tree from flat path->content map.
- */
-function buildTemplateFolderFromPaths(
-  fileContents: Map<string, string>,
-  rootName: string
-) {
-  interface TempFolder {
-    folderName: string;
-    items: (TempFolder | { filename: string; fileExtension: string; content: string })[];
-  }
-
-  const root: TempFolder = { folderName: rootName, items: [] };
-
-  for (const [filePath, content] of fileContents) {
-    const parts = filePath.split("/");
-    let current = root;
-
-    // Navigate/create folders for all but the last segment
-    for (let i = 0; i < parts.length - 1; i++) {
-      const folderName = parts[i];
-      let existing = current.items.find(
-        (item): item is TempFolder =>
-          "folderName" in item && item.folderName === folderName
-      );
-
-      if (!existing) {
-        existing = { folderName, items: [] };
-        current.items.push(existing);
-      }
-      current = existing;
-    }
-
-    // Add the file
-    const fileName = parts[parts.length - 1];
-    const lastDot = fileName.lastIndexOf(".");
-    const name = lastDot > 0 ? fileName.substring(0, lastDot) : fileName;
-    const ext = lastDot > 0 ? fileName.substring(lastDot + 1) : "";
-
-    current.items.push({
-      filename: name,
-      fileExtension: ext,
-      content,
-    });
-  }
-
-  return root;
-}

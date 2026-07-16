@@ -44,6 +44,7 @@ interface IdeLayoutProps {
   instance: unknown;
   explorerContent: React.ReactNode;
   sourceControlContent?: React.ReactNode;
+  agentContent?: React.ReactNode;
   projectName?: string;
   /** Called with the tab being left/closed, before the switch/close itself happens
    *  — used to flush a dirty file's unsaved changes so they're never lost. */
@@ -55,6 +56,7 @@ export function IdeLayout({
   instance,
   explorerContent,
   sourceControlContent,
+  agentContent,
   projectName,
   onBeforeFileSelect,
   onBeforeFileClose,
@@ -162,7 +164,7 @@ export function IdeLayout({
         {/* LEFT: File Explorer */}
         <div style={{ flex: `0 0 ${explorerWidth}px`, minWidth: '180px', maxWidth: '400px', height: '100%', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
           <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }} className="bg-sidebar">
-            <IdeSidebar activeTab={activeTab} sourceControlContent={sourceControlContent}>
+            <IdeSidebar activeTab={activeTab} sourceControlContent={sourceControlContent} agentContent={agentContent}>
               {explorerContent}
             </IdeSidebar>
           </div>

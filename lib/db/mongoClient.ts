@@ -217,6 +217,22 @@ export function createMongoDbClient(config: MongoConfig) {
         return { deletedCount: result.deletedCount };
       });
     },
+
+    /**
+     * Schema/infra concern, not a per-request data operation — this app has
+     * no automatic index provisioning (see MIGRATION_INVENTORY.md's
+     * uniqueness-index gap, handled manually on Atlas today). Exposed here
+     * only so a one-off setup script (e.g. scripts/ensure-checkpoint-indexes.ts)
+     * can create indexes idempotently through the same DbClient surface,
+     * rather than reaching for the raw mongodb driver directly.
+     */
+    async createIndex(
+      collection: string,
+      keys: Record<string, 1 | -1>,
+      options: { expireAfterSeconds?: number; unique?: boolean; name?: string } = {}
+    ): Promise<string> {
+      return withCollection(config, collection, "createIndex", async (col) => col.createIndex(keys, options));
+    },
   };
 }
 

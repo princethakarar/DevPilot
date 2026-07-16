@@ -19,6 +19,16 @@ interface UsePlaygroundReturn {
   error: string | null;
   loadPlayground: () => Promise<void>;
   saveTemplateData: (data: TemplateFolder) => Promise<void>;
+  /**
+   * Same fetch-and-apply as loadPlayground, but never touches `isLoading`/`error`
+   * — those gate whether page.tsx renders <IdeLayout> at all (see the full-screen
+   * "Initializing Env" branch), so toggling them unmounts the whole IDE (terminal,
+   * preview, editor, agent panel) for the duration of the fetch. Use this for a
+   * background refresh after something finishes in place (e.g. an agent run
+   * ending, a repo getting linked) where the user is actively looking at a live
+   * WebContainer/terminal/SSE connection that a remount would silently kill.
+   */
+  refreshTemplateData: () => Promise<void>;
 }
 
 export const usePlayground = (id: string): UsePlaygroundReturn => {
@@ -57,12 +67,16 @@ export const usePlayground = (id: string): UsePlaygroundReturn => {
     return injectEnvFile(data, path, serializeEnvContent(vars));
   }, [id]);
 
-  const loadPlayground = useCallback(async () => {
+  // `background` = true skips the isLoading/error toggles that gate whether
+  // page.tsx renders <IdeLayout> at all — see refreshTemplateData's doc comment.
+  const fetchAndApply = useCallback(async (background: boolean) => {
     if (!id || id === "undefined") return;
 
     try {
-      setIsLoading(true);
-      setError(null);
+      if (!background) {
+        setIsLoading(true);
+        setError(null);
+      }
 
       const data = await getPlaygroundById(id);
 
@@ -73,7 +87,7 @@ export const usePlayground = (id: string): UsePlaygroundReturn => {
       if (typeof rawContent === "string") {
         const parsedContent = JSON.parse(rawContent);
         setTemplateData(await mergeEnvVars(parsedContent, data?.envFilePath));
-        toast.success("playground loaded successfully");
+        if (!background) toast.success("playground loaded successfully");
         return;
       }
 
@@ -98,15 +112,24 @@ export const usePlayground = (id: string): UsePlaygroundReturn => {
         };
       }
       setTemplateData(await mergeEnvVars(freshData, data?.envFilePath));
-      toast.success("Template loaded successfully");
+      if (!background) toast.success("Template loaded successfully");
     } catch (error) {
       console.error("Error loading playground:", error);
-      setError("Failed to load playground data");
-      toast.error("Failed to load playground data");
+      if (!background) {
+        setError("Failed to load playground data");
+        toast.error("Failed to load playground data");
+      } else {
+        // Never set `error` here — that also gates <IdeLayout>'s render, which
+        // would unmount the live IDE over a background refresh failing.
+        toast.error("Failed to refresh project data — showing last known state.");
+      }
     } finally {
-      setIsLoading(false);
+      if (!background) setIsLoading(false);
     }
   }, [id, mergeEnvVars]);
+
+  const loadPlayground = useCallback(() => fetchAndApply(false), [fetchAndApply]);
+  const refreshTemplateData = useCallback(() => fetchAndApply(true), [fetchAndApply]);
 
 
 
@@ -154,6 +177,7 @@ export const usePlayground = (id: string): UsePlaygroundReturn => {
     error,
     loadPlayground,
     saveTemplateData,
+    refreshTemplateData,
   };
 };
   

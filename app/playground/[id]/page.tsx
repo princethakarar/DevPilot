@@ -32,6 +32,7 @@ import {
   FolderOpen,
 } from "lucide-react";
 import { SourceControlPanel } from "@/modules/playground/components/source-control-panel";
+import { AgentPanel } from "@/modules/playground/components/agent-panel";
 import { useSourceControl } from "@/modules/playground/hooks/useSourceControl";
 import { useNodeModulesPersistence } from "@/modules/webcontainers/hooks/useNodeModulesPersistence";
 import { useIdeLayout } from "@/modules/webcontainers/hooks/useIdeLayout";
@@ -51,7 +52,7 @@ const MainPlaygroundPage = () => {
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [highlightCurrentLine, setHighlightCurrentLine] = useState(true);
 
-  const { playgroundData, templateData, isLoading, error, saveTemplateData, loadPlayground } =
+  const { playgroundData, templateData, isLoading, error, saveTemplateData, loadPlayground, refreshTemplateData } =
     usePlayground(id);
 
   const {
@@ -499,6 +500,9 @@ const MainPlaygroundPage = () => {
             projectDescription={playgroundData?.description}
             onRepoLinked={loadPlayground}
           />
+        }
+        agentContent={
+          <AgentPanel playgroundId={id} instance={instance} onRunFinished={refreshTemplateData} />
         }
         explorerContent={
           <TemplateFileTree
