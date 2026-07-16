@@ -1,5 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import { isBinaryFileExtension } from './binary-extensions';
 
 /**
  * Represents a file in the template structure
@@ -8,6 +9,11 @@ export interface TemplateFile {
   filename: string;
   fileExtension: string;
   content: string;
+  /** Present (and always "base64") only for binary assets — `content` holds their
+   *  base64-encoded bytes rather than raw text, so they survive being stored as a
+   *  JSON string. Absent means plain UTF-8 text, matching every file before this
+   *  field existed. commit.ts's blob creation reads this to pick the right encoding. */
+  encoding?: "base64";
 }
 
 /**
@@ -22,6 +28,21 @@ export interface TemplateFolder {
  * Type representing either a file or folder in the template structure
  */
 export type TemplateItem = TemplateFile | TemplateFolder;
+
+/**
+ * Counts every file (leaf) node in a template tree, recursively. Used as a
+ * cheap structural completeness check — e.g. verifying a scaffold actually
+ * made it into the store intact after persisting, without asserting on every
+ * individual file's content being non-empty (a template can legitimately
+ * ship a 0-byte placeholder file).
+ */
+export function countTemplateFiles(folder: TemplateFolder): number {
+  let count = 0;
+  for (const item of folder.items) {
+    count += "folderName" in item ? countTemplateFiles(item) : 1;
+  }
+  return count;
+}
 
 /**
  * Options for scanning template directories
@@ -181,19 +202,30 @@ async function processDirectory(
         try {
           const stats = await fs.promises.stat(entryPath);
           const parsedPath = path.parse(entryName);
+          const fileExtension = parsedPath.ext.replace(/^\./, ''); // Remove leading dot
           let content: string;
-          
+          let encoding: "base64" | undefined;
+
           // Check file size before reading content
           if (options.maxFileSize && stats.size > options.maxFileSize) {
             content = `[File content not included: size (${stats.size} bytes) exceeds maximum allowed size (${options.maxFileSize} bytes)]`;
+          } else if (isBinaryFileExtension(fileExtension)) {
+            // Read as raw bytes, not utf8 — utf8-decoding arbitrary binary bytes
+            // (e.g. a .ico) is lossy (invalid sequences become replacement
+            // characters), silently corrupting the asset. base64 round-trips
+            // exactly, and matches the `encoding` GitHub blob creation expects.
+            const buffer = await fs.promises.readFile(entryPath);
+            content = buffer.toString("base64");
+            encoding = "base64";
           } else {
             content = await fs.promises.readFile(entryPath, 'utf8');
           }
-          
+
           items.push({
             filename: parsedPath.name,
-            fileExtension: parsedPath.ext.replace(/^\./, ''), // Remove leading dot
-            content
+            fileExtension,
+            content,
+            ...(encoding ? { encoding } : {}),
           });
         } catch (error) {
           console.error(`Error reading file ${entryPath}:`, error);

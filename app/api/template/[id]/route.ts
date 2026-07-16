@@ -1,8 +1,6 @@
-import { scanTemplateDirectory } from "@/modules/playground/lib/path-to-json";
 import { findPlaygroundById } from "@/lib/db/repositories/playgrounds";
-import { templatePaths } from "@/lib/template";
-import path from "path";
-import fs from "fs/promises";
+import { upsertTemplateFileForPlayground } from "@/lib/db/repositories/templateFiles";
+import { loadTemplateScaffold } from "@/lib/template";
 import { NextRequest } from "next/server";
 
 function validateJsonStructure(data: unknown): boolean {
@@ -31,46 +29,29 @@ const playground = await findPlaygroundById(id)
   if (!playground) {
     return Response.json({ error: "Playground not found" }, { status: 404 });
   }
-  
-  const templateKey = playground.template as keyof typeof templatePaths;
-  const templatePath = templatePaths[templateKey]
-
-    if (templateKey === "NODE") {
-      const nodeTemplate = {
-        folderName: "node",
-        items: [
-          {
-            filename: "package",
-            fileExtension: "json",
-            content: "{\n  \"name\": \"project-name\",\n  \"version\": \"1.0.0\",\n  \"description\": \"\",\n  \"main\": \"index.js\",\n  \"scripts\": {\n    \"test\": \"echo \\\"Error: no test specified\\\" && exit 1\"\n  },\n  \"keywords\": [],\n  \"author\": \"\",\n  \"license\": \"ISC\"\n}"
-          },
-          {
-            filename: "index",
-            fileExtension: "js",
-            content: "// Welcome to your Node.js project!\nconsole.log('Hello, Node.js!');\n"
-          },
-          {
-            filename: ".gitignore",
-            fileExtension: "",
-            content: "node_modules/\n.env\n"
-          }
-        ]
-      };
-      return Response.json({ success: true, templateJson: nodeTemplate }, { status: 200 });
-    }
-
-    if (!templatePath) {
-    return Response.json({ error: "Invalid template" }, { status: 404 });
-  }
 
   try {
-    const inputPath = path.join(/*turbopackIgnore: true*/ process.cwd() , templatePath);
-
-    const result = await scanTemplateDirectory(inputPath);
+    const result = await loadTemplateScaffold(playground.template);
 
     // Validate the JSON structure before saving
     if (!validateJsonStructure(result.items)) {
       return Response.json({ error: "Invalid JSON structure" }, { status: 500 });
+    }
+
+    // Self-heal: this route only runs when the store has no TemplateFile
+    // content yet (see usePlayground.tsx's fallback branch) — either a
+    // pre-existing project from before scaffolds were persisted at creation
+    // time, or a rare race. Persisting here means the NEXT load (and any
+    // GitHub push in between) sees real stored content instead of hitting
+    // "No file content found" again. Reuses the exact same upsert autosave
+    // uses — no parallel write path, and no new client→server endpoint needed
+    // since this route already exists and is already invoked for this case.
+    try {
+      await upsertTemplateFileForPlayground(id, JSON.stringify(result));
+    } catch (persistError) {
+      // Non-fatal: the client still gets a usable tree to render even if the
+      // backfill write fails; it'll simply retry next load.
+      console.error(`[template-scaffold] Failed to backfill TemplateFile for playground ${id}:`, persistError);
     }
 
       return Response.json({ success: true, templateJson: result }, { status: 200 });

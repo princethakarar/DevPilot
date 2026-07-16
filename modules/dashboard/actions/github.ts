@@ -4,18 +4,7 @@ import { findAccountByUserIdAndProvider } from "@/lib/db/repositories/accounts";
 import { createPlaygroundWithTemplateFile } from "@/lib/db/repositories/playgrounds";
 import { currentUser } from "@/modules/auth/actions";
 import { revalidatePath } from "next/cache";
-
-// Binary file extensions to skip when importing
-const BINARY_EXTENSIONS = new Set([
-  "png", "jpg", "jpeg", "gif", "bmp", "ico", "svg", "webp", "avif",
-  "mp3", "mp4", "wav", "ogg", "webm", "avi", "mov",
-  "zip", "tar", "gz", "rar", "7z",
-  "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx",
-  "woff", "woff2", "ttf", "eot", "otf",
-  "exe", "dll", "so", "dylib",
-  "pyc", "class", "o", "obj",
-  "lock",
-]);
+import { BINARY_FILE_EXTENSIONS as BINARY_EXTENSIONS } from "@/modules/playground/lib/binary-extensions";
 
 // Max file size to import (100KB)
 const MAX_FILE_SIZE = 100 * 1024;

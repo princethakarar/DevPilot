@@ -16,7 +16,15 @@ import { findRootGitignoreFile } from "../lib/gitignore-tree";
 interface FileChange {
   path: string;
   content: string;
+  /** "base64" for binary assets (content already holds their base64 bytes) — see
+   *  TemplateFile.encoding in path-to-json.ts. Absent means plain UTF-8 text. */
+  encoding?: "base64";
   status: "modified" | "added" | "deleted";
+}
+
+interface FlattenedFile {
+  content: string;
+  encoding?: "base64";
 }
 
 /**
@@ -51,14 +59,14 @@ function getIgnoreMatcher(tree: TemplateFolder | null): ReturnType<typeof ignore
   }
 }
 
-function filterIgnored(
-  files: Map<string, string>,
+function filterIgnored<V>(
+  files: Map<string, V>,
   matcher: ReturnType<typeof ignore> | null
-): Map<string, string> {
+): Map<string, V> {
   if (!matcher) return files;
-  const filtered = new Map<string, string>();
-  for (const [path, content] of files) {
-    if (!matcher.ignores(path)) filtered.set(path, content);
+  const filtered = new Map<string, V>();
+  for (const [path, value] of files) {
+    if (!matcher.ignores(path)) filtered.set(path, value);
   }
   return filtered;
 }
@@ -123,6 +131,34 @@ interface GithubFailure {
   /** Non-fast-forward: the remote moved since we last read it. Never resolved by silently force-pushing. */
   isDiverged?: boolean;
   isRateLimited?: boolean;
+  /** The repo itself is gone (deleted/renamed) or the token can no longer see it — distinct from a
+   *  404 on a ref/path within a repo that still exists. Frontend offers "Create New Repository". */
+  repoNotFound?: boolean;
+}
+
+/**
+ * Cheap, on-demand disambiguation for a 404: is the *repo* gone, or is it just
+ * this ref/path/commit that's missing from a repo that still exists? Only
+ * ever called after something has already 404'd — never speculatively (e.g.
+ * not on page load) — per the cost constraint on this check.
+ * Returns true/false when conclusive, or null when the check itself was
+ * inconclusive (network hiccup, rate limit, etc.) — callers must not treat
+ * null as "confirmed gone", since that would misclassify a transient blip as
+ * repo deletion.
+ */
+async function checkRepoExists(
+  owner: string,
+  repo: string,
+  headers: HeadersInit
+): Promise<boolean | null> {
+  try {
+    const res = await fetch(`https://api.github.com/repos/${owner}/${repo}`, { headers });
+    if (res.status === 404) return false;
+    if (res.ok) return true;
+    return null;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -137,7 +173,8 @@ interface GithubFailure {
 async function reportGithubFailure(
   operation: string,
   res: Response,
-  ctx: { owner: string; repo: string; branch?: string }
+  ctx: { owner: string; repo: string; branch?: string },
+  headers: HeadersInit
 ): Promise<GithubFailure> {
   let ghMessage: string | undefined;
   try {
@@ -171,13 +208,28 @@ async function reportGithubFailure(
       isDiverged: true,
     };
   }
+  if (res.status === 404) {
+    // Distinguish "repo itself is gone" from "just this ref/path/commit is
+    // missing on a repo that still exists" (e.g. a divergent regression case:
+    // an existing repo missing a branch ref is NOT "repo gone"). GitHub also
+    // 404s (never 403) for private repos the token lost access to, hence the
+    // wording covering both possibilities below.
+    const exists = await checkRepoExists(ctx.owner, ctx.repo, headers);
+    if (exists === false) {
+      return {
+        message: `The linked GitHub repository (${ctx.owner}/${ctx.repo}) no longer exists or is no longer accessible. It may have been deleted or renamed on GitHub.`,
+        repoNotFound: true,
+      };
+    }
+    return { message: ghMessage ? `${res.status} ${ghMessage}` : `GitHub API error (404): ${operation}` };
+  }
   return { message: ghMessage ? `${res.status} ${ghMessage}` : `GitHub API error (${res.status})` };
 }
 
 export async function commitChangesToGithub(
   playgroundId: string,
   commitMessage: string
-): Promise<{ success: boolean; commitUrl?: string; error?: string; needsReauth?: boolean }> {
+): Promise<{ success: boolean; commitUrl?: string; error?: string; needsReauth?: boolean; repoNotFound?: boolean }> {
   try {
     const user = await currentUser();
     if (!user?.id) return { success: false, error: "Not authenticated" };
@@ -221,9 +273,27 @@ export async function commitChangesToGithub(
     const matcher = getIgnoreMatcher(currentTree);
     const currentFiles = filterIgnored(flattenTemplateFolder(currentTree), matcher);
     const baseFiles = filterIgnored(
-      baseTree ? flattenTemplateFolder(baseTree) : new Map<string, string>(),
+      baseTree ? flattenTemplateFolder(baseTree) : new Map<string, FlattenedFile>(),
       matcher
     );
+
+    // Phase 2 guard: even with the persistence gap fixed at the source (see
+    // dashboard's createPlayground + the /api/template self-heal), a tree
+    // could still end up with a file entry whose content never made it in.
+    // Fail loud and specific here rather than pushing an empty/garbage blob
+    // or falling back to the vague top-level "No file content found".
+    const missingContentPaths = collectMissingContentPaths(currentFiles);
+    if (missingContentPaths.length > 0) {
+      console.error(
+        `[github-push] ${missingContentPaths.length} file(s) missing stored content for playground ${playgroundId}:`,
+        missingContentPaths
+      );
+      return {
+        success: false,
+        error: `Cannot publish — ${missingContentPaths.length} file${missingContentPaths.length === 1 ? "" : "s"} missing saved content: ${missingContentPaths.join(", ")}. Try reopening the project or contact support if this persists.`,
+      };
+    }
+
     const changes = calculateChanges(baseFiles, currentFiles);
 
     if (changes.length === 0) {
@@ -250,10 +320,28 @@ export async function commitChangesToGithub(
     );
     let latestCommitSha: string | null = null;
     if (refRes.status === 404 || refRes.status === 409) {
+      // A 404 here is ambiguous: it's the expected signal for a genuinely
+      // brand-new repo with no commits yet (bootstrap case, handled below) —
+      // but it's ALSO exactly what a deleted/renamed/inaccessible repo
+      // returns. A 409 ("Git Repository is empty") only ever comes from a
+      // repo that demonstrably still exists, so only 404 needs the extra
+      // check; disambiguating unconditionally on every legitimate first-ever
+      // push would be wasted cost for no benefit.
+      if (refRes.status === 404) {
+        const exists = await checkRepoExists(owner, repo, headers);
+        if (exists === false) {
+          console.error(`[github-push] repo not found: ${owner}/${repo}`);
+          return {
+            success: false,
+            error: `The linked GitHub repository (${owner}/${repo}) no longer exists or is no longer accessible. It may have been deleted or renamed on GitHub.`,
+            repoNotFound: true,
+          };
+        }
+      }
       latestCommitSha = null;
     } else if (!refRes.ok) {
-      const failure = await reportGithubFailure("get branch ref", refRes, ghCtx);
-      return { success: false, error: failure.message, needsReauth: failure.needsReauth };
+      const failure = await reportGithubFailure("get branch ref", refRes, ghCtx, headers);
+      return { success: false, error: failure.message, needsReauth: failure.needsReauth, repoNotFound: failure.repoNotFound };
     } else {
       const refData = await refRes.json();
       latestCommitSha = refData.object.sha;
@@ -283,6 +371,13 @@ export async function commitChangesToGithub(
         return { success: false, error: "Nothing to seed the initial commit with" };
       }
       const seedChange = changes[seedIndex];
+      // The Contents API always wants base64 in `content`. A binary asset's
+      // content is ALREADY base64 (see TemplateFile.encoding) — re-encoding
+      // it here would double-encode and corrupt it; only plain text needs
+      // the utf-8 -> base64 conversion.
+      const seedContentBase64 = seedChange.encoding === "base64"
+        ? seedChange.content
+        : Buffer.from(seedChange.content, "utf-8").toString("base64");
       const seedRes = await fetchGithubWithRetry(
         `https://api.github.com/repos/${owner}/${repo}/contents/${seedChange.path}`,
         {
@@ -290,14 +385,14 @@ export async function commitChangesToGithub(
           headers,
           body: JSON.stringify({
             message: commitMessage,
-            content: Buffer.from(seedChange.content, "utf-8").toString("base64"),
+            content: seedContentBase64,
             branch,
           }),
         }
       );
       if (!seedRes.ok) {
-        const failure = await reportGithubFailure("seed initial commit", seedRes, ghCtx);
-        return { success: false, error: failure.message, needsReauth: failure.needsReauth };
+        const failure = await reportGithubFailure("seed initial commit", seedRes, ghCtx, headers);
+        return { success: false, error: failure.message, needsReauth: failure.needsReauth, repoNotFound: failure.repoNotFound };
       }
       const seedData = await seedRes.json();
       latestCommitSha = seedData.commit.sha;
@@ -321,8 +416,8 @@ export async function commitChangesToGithub(
         { headers }
       );
       if (!commitRes.ok) {
-        const failure = await reportGithubFailure("get base commit", commitRes, ghCtx);
-        return { success: false, error: failure.message, needsReauth: failure.needsReauth };
+        const failure = await reportGithubFailure("get base commit", commitRes, ghCtx, headers);
+        return { success: false, error: failure.message, needsReauth: failure.needsReauth, repoNotFound: failure.repoNotFound };
       }
       const commitData = await commitRes.json();
       baseTreeSha = commitData.tree.sha;
@@ -340,7 +435,9 @@ export async function commitChangesToGithub(
           sha: null, // null SHA deletes the file
         });
       } else {
-        // Create a blob for the file content
+        // Create a blob for the file content. Binary assets are already
+        // base64 (see TemplateFile.encoding) — tell GitHub so, rather than
+        // always claiming utf-8, which would corrupt them.
         const blobRes = await fetchGithubWithRetry(
           `https://api.github.com/repos/${owner}/${repo}/git/blobs`,
           {
@@ -348,13 +445,13 @@ export async function commitChangesToGithub(
             headers,
             body: JSON.stringify({
               content: change.content,
-              encoding: "utf-8",
+              encoding: change.encoding === "base64" ? "base64" : "utf-8",
             }),
           }
         );
         if (!blobRes.ok) {
-          const failure = await reportGithubFailure(`create blob (${change.path})`, blobRes, ghCtx);
-          return { success: false, error: failure.message, needsReauth: failure.needsReauth };
+          const failure = await reportGithubFailure(`create blob (${change.path})`, blobRes, ghCtx, headers);
+          return { success: false, error: failure.message, needsReauth: failure.needsReauth, repoNotFound: failure.repoNotFound };
         }
         const blobData = await blobRes.json();
 
@@ -381,8 +478,8 @@ export async function commitChangesToGithub(
       }
     );
     if (!newTreeRes.ok) {
-      const failure = await reportGithubFailure("create tree", newTreeRes, ghCtx);
-      return { success: false, error: failure.message, needsReauth: failure.needsReauth };
+      const failure = await reportGithubFailure("create tree", newTreeRes, ghCtx, headers);
+      return { success: false, error: failure.message, needsReauth: failure.needsReauth, repoNotFound: failure.repoNotFound };
     }
     const newTreeData = await newTreeRes.json();
 
@@ -400,8 +497,8 @@ export async function commitChangesToGithub(
       }
     );
     if (!newCommitRes.ok) {
-      const failure = await reportGithubFailure("create commit", newCommitRes, ghCtx);
-      return { success: false, error: failure.message, needsReauth: failure.needsReauth };
+      const failure = await reportGithubFailure("create commit", newCommitRes, ghCtx, headers);
+      return { success: false, error: failure.message, needsReauth: failure.needsReauth, repoNotFound: failure.repoNotFound };
     }
     const newCommitData = await newCommitRes.json();
 
@@ -428,9 +525,10 @@ export async function commitChangesToGithub(
       const failure = await reportGithubFailure(
         latestCommitSha ? "update ref (PATCH)" : "create ref (POST)",
         updateRefRes,
-        ghCtx
+        ghCtx,
+        headers
       );
-      return { success: false, error: failure.message, needsReauth: failure.needsReauth };
+      return { success: false, error: failure.message, needsReauth: failure.needsReauth, repoNotFound: failure.repoNotFound };
     }
 
     // 10. Update the base content in the database to the new state
@@ -461,13 +559,13 @@ export async function commitChangesToGithub(
 }
 
 /**
- * Flatten a TemplateFolder tree into a map of path -> content.
+ * Flatten a TemplateFolder tree into a map of path -> { content, encoding }.
  */
 function flattenTemplateFolder(
   folder: any,
   prefix: string = ""
-): Map<string, string> {
-  const files = new Map<string, string>();
+): Map<string, FlattenedFile> {
+  const files = new Map<string, FlattenedFile>();
 
   if (!folder?.items) return files;
 
@@ -476,8 +574,8 @@ function flattenTemplateFolder(
       // It's a folder
       const folderPath = prefix ? `${prefix}/${item.folderName}` : item.folderName;
       const subFiles = flattenTemplateFolder(item, folderPath);
-      for (const [path, content] of subFiles) {
-        files.set(path, content);
+      for (const [path, entry] of subFiles) {
+        files.set(path, entry);
       }
     } else {
       // It's a file
@@ -485,7 +583,15 @@ function flattenTemplateFolder(
         ? `${item.filename}.${item.fileExtension}`
         : item.filename;
       const filePath = prefix ? `${prefix}/${fileName}` : fileName;
-      files.set(filePath, item.content || "");
+      files.set(filePath, {
+        // Deliberately NOT coerced to "" here — a missing/null/undefined
+        // content field (the exact template-persistence corruption this is
+        // guarding against) must stay visibly not-a-string so
+        // collectMissingContentPaths can catch it, instead of silently
+        // becoming indistinguishable from a legitimately empty file.
+        content: item.content,
+        encoding: item.encoding === "base64" ? "base64" : undefined,
+      });
     }
   }
 
@@ -493,21 +599,37 @@ function flattenTemplateFolder(
 }
 
 /**
+ * Defensive guard against the exact class of bug this was written to catch:
+ * a TemplateFile item whose `content` never actually got persisted (null,
+ * undefined, or otherwise not a string) sitting alongside otherwise-healthy
+ * files in the same tree. Deliberately does NOT flag a plain empty string —
+ * a template can legitimately ship a 0-byte file — only genuinely missing
+ * content, so this can't false-positive on that case.
+ */
+function collectMissingContentPaths(files: Map<string, FlattenedFile>): string[] {
+  const missing: string[] = [];
+  for (const [path, entry] of files) {
+    if (typeof entry.content !== "string") missing.push(path);
+  }
+  return missing;
+}
+
+/**
  * Calculate file changes between base and current state.
  */
 function calculateChanges(
-  baseFiles: Map<string, string>,
-  currentFiles: Map<string, string>
+  baseFiles: Map<string, FlattenedFile>,
+  currentFiles: Map<string, FlattenedFile>
 ): FileChange[] {
   const changes: FileChange[] = [];
 
   // Check for modified and added files
-  for (const [path, content] of currentFiles) {
-    const baseContent = baseFiles.get(path);
-    if (baseContent === undefined) {
-      changes.push({ path, content, status: "added" });
-    } else if (baseContent !== content) {
-      changes.push({ path, content, status: "modified" });
+  for (const [path, entry] of currentFiles) {
+    const baseEntry = baseFiles.get(path);
+    if (baseEntry === undefined) {
+      changes.push({ path, content: entry.content, encoding: entry.encoding, status: "added" });
+    } else if (baseEntry.content !== entry.content) {
+      changes.push({ path, content: entry.content, encoding: entry.encoding, status: "modified" });
     }
   }
 
@@ -548,7 +670,7 @@ export async function getPlaygroundChangesList(
     const matcher = getIgnoreMatcher(currentTree);
     const currentFiles = filterIgnored(flattenTemplateFolder(currentTree), matcher);
     const baseFiles = filterIgnored(
-      baseTree ? flattenTemplateFolder(baseTree) : new Map<string, string>(),
+      baseTree ? flattenTemplateFolder(baseTree) : new Map<string, FlattenedFile>(),
       matcher
     );
     const changes = calculateChanges(baseFiles, currentFiles);
@@ -600,8 +722,9 @@ export async function discardFileChanges(
       return { success: false, error: "File is ignored and has no tracked changes to discard" };
     }
 
-    const baseFiles = baseTree ? flattenTemplateFolder(baseTree) : new Map<string, string>();
-    const baseFileContent = baseFiles.get(filePath);
+    const baseFiles = baseTree ? flattenTemplateFolder(baseTree) : new Map<string, FlattenedFile>();
+    const baseFileEntry = baseFiles.get(filePath);
+    const baseFileContent = baseFileEntry?.content;
 
     const newTree =
       baseFileContent === undefined

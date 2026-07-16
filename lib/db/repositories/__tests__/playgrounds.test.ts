@@ -65,13 +65,14 @@ describe("findPlaygroundWithTemplateFiles (relation read)", () => {
 });
 
 describe("findPlaygroundSummaryWithTemplateFiles (projected relation read)", () => {
-  it("requests only title/githubRepo/githubBranch/envFilePath and merges template file contents", async () => {
+  it("requests only title/githubRepo/githubBranch/githubBaseContent/envFilePath and merges template file contents", async () => {
     const client = mockClient({
       findOne: vi.fn().mockResolvedValue({
         _id: "p1",
         title: "My App",
         githubRepo: "owner/repo",
         githubBranch: "main",
+        githubBaseContent: '{"a":1}',
         envFilePath: ["server"],
       }),
       find: vi.fn().mockResolvedValue([{ _id: "t1", content: "content-a" }]),
@@ -83,13 +84,14 @@ describe("findPlaygroundSummaryWithTemplateFiles (projected relation read)", () 
       title: "My App",
       githubRepo: "owner/repo",
       githubBranch: "main",
+      githubBaseContent: '{"a":1}',
       envFilePath: ["server"],
       templateFiles: [{ content: "content-a" }],
     });
     expect(client.findOne).toHaveBeenCalledWith(
       COLLECTIONS.Playground,
       { _id: "p1" },
-      { projection: { title: 1, githubRepo: 1, githubBranch: 1, envFilePath: 1 } }
+      { projection: { title: 1, githubRepo: 1, githubBranch: 1, githubBaseContent: 1, envFilePath: 1 } }
     );
   });
 

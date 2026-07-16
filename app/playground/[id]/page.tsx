@@ -20,7 +20,6 @@ import {
   TemplateItem,
 } from "@/modules/playground/lib/path-to-json";
 import { TemplateFileTree } from "@/modules/playground/components/playground-explorer";
-import { useAISuggestions } from "@/modules/playground/hooks/useAISuggestion";
 
 import { useFileExplorer } from "@/modules/playground/hooks/useFileExplorer";
 import { usePlayground } from "@/modules/playground/hooks/usePlayground";
@@ -55,8 +54,6 @@ const MainPlaygroundPage = () => {
   const { playgroundData, templateData, isLoading, error, saveTemplateData, loadPlayground } =
     usePlayground(id);
 
-    const aiSuggestions = useAISuggestions();
-
   const {
     setTemplateData,
     setActiveFileId,
@@ -87,9 +84,20 @@ const MainPlaygroundPage = () => {
 
   const lastSyncedContent = useRef<Map<string, string>>(new Map());
 
+  // useFileExplorer is a single global store, not scoped per playground, and
+  // Next.js reuses this same page instance when navigating between
+  // /playground/<id> routes (no remount). Without this, a previous project's
+  // open tabs (and their content) stayed in the store and rendered inside the
+  // next project's IdeLayout — this project's editor showing another
+  // project's files. Mirrors the preview-URL reset below for the same class
+  // of stale-cross-project-state bug.
   useEffect(() => {
+    const prevId = useFileExplorer.getState().playgroundId;
+    if (prevId && prevId !== id) {
+      closeAllFiles();
+    }
     setPlaygroundId(id);
-  }, [id, setPlaygroundId]);
+  }, [id, setPlaygroundId, closeAllFiles]);
 
   // The preview URL lives in a global store, and the WebContainer instance
   // itself is cached across playgrounds in the same tab (see useWebContainer.ts).
@@ -484,6 +492,7 @@ const MainPlaygroundPage = () => {
             playgroundId={id}
             githubRepo={playgroundData?.githubRepo}
             githubBranch={playgroundData?.githubBranch}
+            githubBaseContent={playgroundData?.githubBaseContent}
             instance={instance}
             writeFileSync={writeFileSync}
             projectTitle={playgroundData?.title}

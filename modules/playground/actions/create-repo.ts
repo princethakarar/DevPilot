@@ -1,8 +1,10 @@
 "use server";
 
 import {
+  findPlaygroundById,
   findPlaygroundWithTemplateFiles,
   updatePlaygroundGithubRepo,
+  unlinkPlaygroundGithubRepo,
 } from "@/lib/db/repositories/playgrounds";
 import { findAccountByUserIdAndProvider } from "@/lib/db/repositories/accounts";
 import { updateTemplateFileContent } from "@/lib/db/repositories/templateFiles";
@@ -58,7 +60,9 @@ export interface CreateGithubRepoResult {
   error?: string;
   /** Token is missing/lacks the `repo` scope — frontend should offer re-auth, not just retry. */
   needsReauth?: boolean;
-  /** Repo was created and linked, but the initial push failed — Source Control (Commit/Push) is now the retry path, not this action. */
+  /** Repo was created and linked, but the initial push failed — Source Control shows a
+   *  dedicated "Retry Initial Push" state (githubBaseContent stays null until it succeeds),
+   *  not this action and not the normal Commit/Push UI. */
   partial?: boolean;
 }
 
@@ -180,19 +184,20 @@ export async function createGithubRepoForPlayground(
     }
 
     // Link the repo BEFORE pushing. If the push below fails, the project is
-    // still left usable: githubBaseContent stays null, so the normal Source
-    // Control panel (commitChangesToGithub) will show every current file as
-    // "added" and the user can commit+push manually — that IS the retry
-    // path, deliberately, instead of a second "retry initial push" endpoint.
+    // still left usable: githubBaseContent stays null, which is exactly the
+    // signal Source Control's initialPushPending state keys off of — the
+    // user lands on "Retry Initial Push" (which just calls
+    // commitChangesToGithub again, idempotently), never a silently
+    // half-linked repo or the ordinary Commit/Push panel.
     await updatePlaygroundGithubRepo(playgroundId, `${owner}/${repoName}`, branch);
 
-    const pushResult = await commitChangesToGithub(playgroundId, "Initial commit");
+    const pushResult = await commitChangesToGithub(playgroundId, "Initial commit from DevPilot");
     if (!pushResult.success) {
       return {
         success: true,
         partial: true,
         repoUrl: repoData.html_url,
-        error: `Repository created, but the initial push failed: ${pushResult.error}. Open Source Control to push manually.`,
+        error: `Repository created, but the initial push failed: ${pushResult.error}. Open Source Control and use "Retry Initial Push".`,
       };
     }
 
@@ -204,5 +209,32 @@ export async function createGithubRepoForPlayground(
       success: false,
       error: `Failed to create repository: ${error instanceof Error ? error.message : String(error)}`,
     };
+  }
+}
+
+/**
+ * Unlinks a GitHub repo from a playground — used when the linked repo was
+ * deleted/renamed/made inaccessible on GitHub and the user chooses "Create
+ * New Repository" to replace the dead link. Only ever clears the GitHub
+ * metadata fields (see unlinkPlaygroundGithubRepo); the project's own files
+ * (templateFiles/envVars) are never touched, so local state survives
+ * unlinking and relinking completely intact.
+ */
+export async function unlinkGithubRepo(
+  playgroundId: string
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const user = await currentUser();
+    if (!user?.id) return { success: false, error: "Not authenticated" };
+
+    const playground = await findPlaygroundById(playgroundId, { projection: { userId: 1 } });
+    if (!playground) return { success: false, error: "Playground not found" };
+    if (playground.userId !== user.id) return { success: false, error: "Unauthorized" };
+
+    await unlinkPlaygroundGithubRepo(playgroundId);
+    return { success: true };
+  } catch (error) {
+    console.error("[github-push] Failed to unlink GitHub repository:", error);
+    return { success: false, error: "Failed to unlink repository" };
   }
 }

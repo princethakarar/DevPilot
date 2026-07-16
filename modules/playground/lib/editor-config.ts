@@ -1,56 +1,64 @@
 import type { Monaco } from "@monaco-editor/react";
 
+const EXTENSION_TO_LANGUAGE: Record<string, string> = {
+  // JavaScript/TypeScript
+  js: "javascript",
+  jsx: "javascript",
+  ts: "typescript",
+  tsx: "typescript",
+  mjs: "javascript",
+  cjs: "javascript",
+
+  // Web languages
+  json: "json",
+  html: "html",
+  htm: "html",
+  css: "css",
+  scss: "scss",
+  sass: "scss",
+  less: "less",
+
+  // Markup/Documentation
+  md: "markdown",
+  markdown: "markdown",
+  xml: "xml",
+  yaml: "yaml",
+  yml: "yaml",
+
+  // Programming languages
+  py: "python",
+  python: "python",
+  java: "java",
+  c: "c",
+  cpp: "cpp",
+  cs: "csharp",
+  php: "php",
+  rb: "ruby",
+  go: "go",
+  rs: "rust",
+  sh: "shell",
+  bash: "shell",
+  sql: "sql",
+
+  // Config files
+  toml: "ini",
+  ini: "ini",
+  conf: "ini",
+  dockerfile: "dockerfile",
+};
+
 export const getEditorLanguage = (fileExtension: string): string => {
   const extension = fileExtension.toLowerCase();
-  const languageMap: Record<string, string> = {
-    // JavaScript/TypeScript
-    js: "javascript",
-    jsx: "javascript",
-    ts: "typescript",
-    tsx: "typescript",
-    mjs: "javascript",
-    cjs: "javascript",
-    
-    // Web languages
-    json: "json",
-    html: "html",
-    htm: "html",
-    css: "css",
-    scss: "scss",
-    sass: "scss",
-    less: "less",
-    
-    // Markup/Documentation
-    md: "markdown",
-    markdown: "markdown",
-    xml: "xml",
-    yaml: "yaml",
-    yml: "yaml",
-    
-    // Programming languages
-    py: "python",
-    python: "python",
-    java: "java",
-    c: "c",
-    cpp: "cpp",
-    cs: "csharp",
-    php: "php",
-    rb: "ruby",
-    go: "go",
-    rs: "rust",
-    sh: "shell",
-    bash: "shell",
-    sql: "sql",
-    
-    // Config files
-    toml: "ini",
-    ini: "ini",
-    conf: "ini",
-    dockerfile: "dockerfile",
-  };
-  
-  return languageMap[extension] || "plaintext";
+  return EXTENSION_TO_LANGUAGE[extension] || "plaintext";
 };
+
+/** Every Monaco language id this editor can produce, plus "plaintext" for
+ *  files with an unrecognized extension — shared with the inline-completion
+ *  provider so it registers against exactly the languages this editor
+ *  actually uses, with no second hand-maintained list to drift out of sync. */
+export const SUPPORTED_LANGUAGE_IDS: readonly string[] = Array.from(
+  new Set(["plaintext", ...Object.values(EXTENSION_TO_LANGUAGE)])
+);
 
 export const configureMonaco = (monaco: Monaco) => {
   // Define a beautiful modern dark theme

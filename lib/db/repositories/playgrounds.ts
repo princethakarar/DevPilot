@@ -41,10 +41,10 @@ export async function findPlaygroundByUserAndTitle(
 export async function findPlaygroundSummaryWithTemplateFiles(
   id: string,
   client: DbClient = getMongoDbClient()
-): Promise<Pick<Playground, "title" | "githubRepo" | "githubBranch" | "envFilePath"> & { templateFiles: { content: unknown }[] } | null> {
+): Promise<Pick<Playground, "title" | "githubRepo" | "githubBranch" | "githubBaseContent" | "envFilePath"> & { templateFiles: { content: unknown }[] } | null> {
   const playground = await findPlaygroundById(
     id,
-    { projection: { title: 1, githubRepo: 1, githubBranch: 1, envFilePath: 1 } },
+    { projection: { title: 1, githubRepo: 1, githubBranch: 1, githubBaseContent: 1, envFilePath: 1 } },
     client
   );
   if (!playground) return null;
@@ -53,6 +53,10 @@ export async function findPlaygroundSummaryWithTemplateFiles(
     title: playground.title,
     githubRepo: playground.githubRepo,
     githubBranch: playground.githubBranch,
+    // Null here (repo linked, never pushed/reset) is the signal the Source
+    // Control panel uses to show "Retry Initial Push" instead of the normal
+    // commit/push UI — see initialPushPending in source-control-panel.tsx.
+    githubBaseContent: playground.githubBaseContent ?? null,
     envFilePath: playground.envFilePath ?? null,
     templateFiles: templateFiles.map((f) => ({ content: f.content })),
   };
@@ -167,6 +171,26 @@ export async function updatePlaygroundGithubRepo(
   client: DbClient = getMongoDbClient()
 ): Promise<void> {
   await client.updateOne(COLLECTIONS.Playground, { _id: id }, { $set: { githubRepo, githubBranch, updatedAt: new Date() } });
+}
+
+/**
+ * Unlinks a GitHub repo from a playground (repo deleted/renamed on GitHub, or
+ * user chose "Create New Repository" to replace a dead link). Only clears the
+ * GitHub-metadata fields — never touches templateFiles/envVars, so the
+ * project's local files are completely unaffected by unlinking/relinking.
+ * Clearing githubBaseContent alongside the repo fields is deliberate: a future
+ * relink must treat every current file as "added" again (a fresh initial
+ * push), never diff against the old repo's stale baseline.
+ */
+export async function unlinkPlaygroundGithubRepo(
+  id: string,
+  client: DbClient = getMongoDbClient()
+): Promise<void> {
+  await client.updateOne(
+    COLLECTIONS.Playground,
+    { _id: id },
+    { $set: { githubRepo: null, githubBranch: null, githubBaseContent: null, updatedAt: new Date() } }
+  );
 }
 
 export async function updatePlaygroundEnvFilePath(

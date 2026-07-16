@@ -9,6 +9,9 @@ import {
   updatePlayground,
   findPlaygroundById,
 } from "@/lib/db/repositories/playgrounds";
+import { upsertTemplateFileForPlayground } from "@/lib/db/repositories/templateFiles";
+import { loadTemplateScaffold } from "@/lib/template";
+import { countTemplateFiles } from "@/modules/playground/lib/path-to-json";
 import { currentUser } from "@/modules/auth/actions";
 import { revalidatePath } from "next/cache";
 
@@ -79,6 +82,36 @@ export const createPlayground = async (data: {
       template: template,
       userId: user.id,
     });
+
+    // Persist the starter scaffold into the SAME store autosave writes to,
+    // synchronously, before this action returns — without this, a
+    // never-edited project has no TemplateFile row at all, and publishing it
+    // to GitHub before the user's first edit fails with "No file content
+    // found" (the editor still looks fine because it separately regenerates
+    // this same scaffold on demand client-side, but never persists it).
+    // Reuses upsertTemplateFileForPlayground — the exact function
+    // SaveUpdatedCode/autosave uses — rather than a second write path.
+    try {
+      const scaffold = await loadTemplateScaffold(template);
+      const persisted = await upsertTemplateFileForPlayground(playground.id, JSON.stringify(scaffold));
+
+      // Structural completeness check: re-read what actually landed in the
+      // store and compare file counts against the scaffold we just built.
+      // Not a per-file non-empty check — a template can legitimately ship an
+      // intentionally empty file — this only catches the row silently ending
+      // up missing/short, and logs loudly instead of surfacing as a confusing
+      // push failure later.
+      const persistedTree = typeof persisted.content === "string" ? JSON.parse(persisted.content) : persisted.content;
+      const expectedCount = countTemplateFiles(scaffold);
+      const actualCount = countTemplateFiles(persistedTree);
+      if (actualCount !== expectedCount) {
+        console.error(
+          `[template-scaffold] Playground ${playground.id} (${template}): expected ${expectedCount} files, store has ${actualCount} after creation-time persist.`
+        );
+      }
+    } catch (scaffoldError) {
+      console.error(`[template-scaffold] Failed to persist starter files for playground ${playground.id}:`, scaffoldError);
+    }
 
     revalidatePath("/dashboard");
     return { playground };
