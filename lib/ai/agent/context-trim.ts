@@ -55,6 +55,38 @@ function summarizeToolResult(name: string, content: string): string {
  * (results already under MIN_TRIM_LENGTH are left alone — trimming a
  * one-line "OK: wrote x.ts" saves nothing and just adds noise).
  */
+/**
+ * Paths whose full read_file content is still live (untrimmed by the above,
+ * and not stale from a later write_file) in the current message history.
+ * Scans forward in order so a later write_file correctly invalidates an
+ * earlier read, and a later fresh read re-establishes liveness. Used to
+ * dedupe a redundant re-read of a file the model already has in front of
+ * it — both the "already trimmed away" and "written since" cases fall
+ * through to a real re-read, never a stale pointer to content that no
+ * longer matches the file.
+ */
+export function findLiveReadPaths(messages: AgentModelMessage[]): Set<string> {
+  const live = new Set<string>();
+  for (const msg of messages) {
+    if (msg.role !== "tool") continue;
+    const content = msg.content ?? "";
+    if (msg.name === "write_file") {
+      const match = content.match(/^OK: wrote (.+)$/);
+      if (match) live.delete(match[1]);
+    } else if (msg.name === "read_file" && !content.startsWith(TRIMMED_MARKER)) {
+      try {
+        const parsed = JSON.parse(content);
+        if (typeof parsed?.path === "string" && !parsed.error) {
+          live.add(parsed.path.replace(/^\/+/, ""));
+        }
+      } catch {
+        // Not parseable JSON — nothing to mark live.
+      }
+    }
+  }
+  return live;
+}
+
 export function trimToolResultHistory(messages: AgentModelMessage[], keepRecentToolResults: number): void {
   const toolIndices: number[] = [];
   for (let i = 0; i < messages.length; i++) {

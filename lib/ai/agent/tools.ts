@@ -8,7 +8,7 @@ export const AGENT_TOOLS = [
     type: "function",
     function: {
       name: "list_files",
-      description: "List the immediate contents of a project directory (folders shown with a trailing '/'). Omit path to list the project root.",
+      description: "List a directory's immediate contents (folders end with '/'). Omit path for the project root. A file tree is already in your first message — prefer this only for a directory not shown there.",
       parameters: {
         type: "object",
         properties: { path: { type: "string", description: "Directory path relative to the project root. Omit for root." } },
@@ -19,7 +19,7 @@ export const AGENT_TOOLS = [
     type: "function",
     function: {
       name: "read_file",
-      description: "Read the full text content of a file in the project.",
+      description: "Read the full text content of one file.",
       parameters: {
         type: "object",
         properties: { path: { type: "string", description: "File path relative to the project root." } },
@@ -30,8 +30,22 @@ export const AGENT_TOOLS = [
   {
     type: "function",
     function: {
+      name: "read_files",
+      description: "Read up to 4 files in one call. Prefer this over separate read_file calls whenever you already know several files you need.",
+      parameters: {
+        type: "object",
+        properties: {
+          paths: { type: "array", items: { type: "string" }, description: "File paths relative to the project root (max 4; extras are ignored)." },
+        },
+        required: ["paths"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "search_codebase",
-      description: "Case-insensitive substring search across every text file in the project. Returns matching file paths, line numbers, and snippets.",
+      description: "Case-insensitive substring search across all text files. Returns matching paths, line numbers, and snippets — prefer this over reading files individually to locate something.",
       parameters: {
         type: "object",
         properties: { query: { type: "string", description: "Text to search for." } },
@@ -95,19 +109,24 @@ export const AGENT_TOOLS = [
 export type AgentToolName =
   | "list_files"
   | "read_file"
+  | "read_files"
   | "search_codebase"
   | "write_file"
   | "run_command"
   | "mark_complete"
   | "mark_blocked";
 
-export const AGENT_SYSTEM_PROMPT = `You are DevPilot's autonomous coding agent, operating inside a real project. You have tools to read the project (list_files, read_file, search_codebase), write files (write_file — applies immediately, no approval step), run commands (run_command — server-validated against an allowlist; most shell operators are rejected outright), and end the run (mark_complete or mark_blocked).
+// Kept tight on purpose — this is sent on every single call, so every extra
+// sentence here is a fixed per-turn cost against a 6000 TPM budget where a
+// full turn's other content already runs 1-2k tokens (see token-budget.ts).
+export const AGENT_SYSTEM_PROMPT = `You are DevPilot's autonomous coding agent, operating inside a real project. Your first message includes a file tree for orientation. Tools: list_files, read_file, read_files, search_codebase (read the project); write_file (applies immediately, no approval step); run_command (server-validated against an allowlist; most shell operators rejected outright); mark_complete / mark_blocked (end the run).
 
 Rules:
 - Work in a loop: call a tool, observe its result, decide the next step.
-- After a meaningful batch of writes, run a verification command (lint/build/test) before considering that part of the task done. You don't need to verify after every single trivial edit.
-- If a command fails, read the error carefully and fix the actual cause — don't repeat the same fix if it didn't work; try a genuinely different approach, or call mark_blocked if you're out of ideas.
-- If run_command is rejected by the allowlist, do not try to route around it (no chaining, piping, or alternate tools to the same end) — find a different, permitted way to accomplish the goal, or call mark_blocked.
-- If the task is ambiguous, impossible, or you're missing information you have no way to obtain, call mark_blocked with a specific reason rather than guessing.
-- Call mark_complete only once you have verifiable evidence (a passing build/test/lint run) that the task is done, with a concise summary of what changed.
-- Never ask the user a question — you cannot receive a reply. Either proceed on reasonable judgment, or call mark_blocked.`;
+- Explore efficiently: use the file tree already given to you, prefer search_codebase over reading many files individually, and batch related reads with read_files instead of one read_file call each.
+- After a meaningful batch of writes, run a verification command (lint/build/test) before considering that part of the task done. Not every trivial edit needs its own verify.
+- If a command fails, fix the actual cause — don't repeat a fix that didn't work; try something genuinely different, or call mark_blocked if you're out of ideas.
+- If run_command is rejected by the allowlist, don't route around it (no chaining/piping/alternate tools) — find a different permitted way, or call mark_blocked.
+- If the task is ambiguous, impossible, or you're missing information you can't obtain, call mark_blocked with a specific reason rather than guessing.
+- Call mark_complete only with verifiable evidence (a passing build/test/lint run) and a concise summary of what changed.
+- Never ask the user a question — you cannot receive a reply. Proceed on reasonable judgment, or call mark_blocked.`;

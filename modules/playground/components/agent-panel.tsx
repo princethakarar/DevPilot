@@ -94,7 +94,7 @@ export function AgentPanel({ playgroundId, instance, onRunFinished }: AgentPanel
     if (state.activeFileId === path) state.setEditorContent(content);
   };
 
-  const { status, log, iterationCount, toolCallCount, elapsedMs, summary, blockedReason, startError, start, stop } = useAgentRun({
+  const { status, log, iterationCount, toolCallCount, elapsedMs, summary, blockedReason, startError, stopRequested, start, stop } = useAgentRun({
     projectId: playgroundId,
     getInstance: () => instance,
     onFileSynced: handleFileSynced,
@@ -151,7 +151,7 @@ export function AgentPanel({ playgroundId, instance, onRunFinished }: AgentPanel
           onChange={(e) => setTask(e.target.value)}
           placeholder="Describe a task — e.g. 'Add input validation to the signup form and make sure it builds.'"
           disabled={isRunning}
-          className="min-h-[64px] text-xs resize-none"
+          className="min-h-[64px] max-h-40 overflow-y-auto text-xs resize-none"
         />
         <div className="flex items-center gap-2">
           {!isRunning ? (
@@ -159,8 +159,8 @@ export function AgentPanel({ playgroundId, instance, onRunFinished }: AgentPanel
               Run Autonomous Task
             </Button>
           ) : (
-            <Button size="sm" variant="destructive" className="flex-1" onClick={stop}>
-              <Square className="h-3.5 w-3.5 mr-1.5" /> Stop
+            <Button size="sm" variant="destructive" className="flex-1" disabled={stopRequested} onClick={stop}>
+              <Square className="h-3.5 w-3.5 mr-1.5" /> {stopRequested ? "Stopping…" : "Stop"}
             </Button>
           )}
         </div>

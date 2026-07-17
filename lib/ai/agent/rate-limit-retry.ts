@@ -29,7 +29,7 @@ export async function callModelWithRateLimitHandling(
   let attempt = 0;
   while (true) {
     try {
-      const result = await callAgentModel(messages);
+      const result = await callAgentModel(messages, onStatus);
       return { ok: true, result };
     } catch (err) {
       if (!(err instanceof AgentRateLimitError)) throw err;

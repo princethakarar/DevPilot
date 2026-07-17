@@ -63,6 +63,20 @@ export function useAgentRun({ projectId, getInstance, onFileSynced }: UseAgentRu
   const runIdRef = useRef<string | null>(null);
   const readerRef = useRef<ReadableStreamDefaultReader<Uint8Array> | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Stop can be clicked in the window between the Stop button appearing
+  // (status flips to "running" synchronously in start()) and runIdRef
+  // actually being populated (only after the POST's response headers land).
+  // Without this, that click silently no-ops — nothing to POST to yet.
+  const stopRequestedRef = useRef(false);
+  const [stopRequested, setStopRequested] = useState(false);
+
+  const postStop = useCallback(async (id: string) => {
+    try {
+      await fetch(`/api/ai/agent/run/${id}/stop`, { method: "POST" });
+    } catch {
+      // The reader loop will still end once the server finishes its stop sequence.
+    }
+  }, []);
 
   const appendLog = useCallback((entry: Omit<AgentLogEntry, "id">) => {
     setLog((prev) => [...prev, { ...entry, id: `${entry.ts}-${prev.length}` }]);
@@ -184,6 +198,8 @@ export function useAgentRun({ projectId, getInstance, onFileSynced }: UseAgentRu
       setCheckpointAfterId(null);
       setStatus("running");
       setStartedAt(Date.now());
+      stopRequestedRef.current = false;
+      setStopRequested(false);
 
       try {
         const res = await fetch("/api/ai/agent/run", {
@@ -202,6 +218,7 @@ export function useAgentRun({ projectId, getInstance, onFileSynced }: UseAgentRu
         const id = res.headers.get("X-Run-Id");
         runIdRef.current = id;
         setRunId(id);
+        if (id && stopRequestedRef.current) void postStop(id);
 
         const reader = res.body.getReader();
         readerRef.current = reader;
@@ -232,18 +249,21 @@ export function useAgentRun({ projectId, getInstance, onFileSynced }: UseAgentRu
         readerRef.current = null;
       }
     },
-    [projectId, handleEvent]
+    [projectId, handleEvent, postStop]
   );
 
   const stop = useCallback(async () => {
+    setStopRequested(true);
     const id = runIdRef.current;
-    if (!id) return;
-    try {
-      await fetch(`/api/ai/agent/run/${id}/stop`, { method: "POST" });
-    } catch {
-      // The reader loop will still end once the server finishes its stop sequence.
+    if (!id) {
+      // Run hasn't been assigned an id yet (still waiting on the start
+      // request's response) — flag it so start() fires the stop the moment
+      // the id arrives, instead of this click silently doing nothing.
+      stopRequestedRef.current = true;
+      return;
     }
-  }, []);
+    await postStop(id);
+  }, [postStop]);
 
   useEffect(() => {
     if (status !== "running" || startedAt === null) {
@@ -274,6 +294,7 @@ export function useAgentRun({ projectId, getInstance, onFileSynced }: UseAgentRu
     startError,
     checkpointBeforeId,
     checkpointAfterId,
+    stopRequested,
     start,
     stop,
   };

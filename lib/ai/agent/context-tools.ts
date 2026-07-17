@@ -20,6 +20,17 @@ const MAX_READ_LINES = 300;
 const MAX_READ_CHARS = 4_000;
 const MAX_SEARCH_MATCHES = 20;
 const SEARCH_SNIPPET_RADIUS = 40;
+/** Cap on a single read_files batch — bounds one call's size the same way MAX_READ_* bounds a single read_file. */
+export const MAX_BATCH_READ_FILES = 4;
+// Injected once, up front, into every run's first message so the model
+// needs fewer exploratory list_files/read_file calls just to get its
+// bearings — but it's never trimmed away (it isn't a tool result), so it
+// rides along on EVERY subsequent call for the run's whole lifetime. Kept
+// deliberately tiny (~a few hundred tokens) so that fixed per-turn cost
+// stays well under what even one skipped list_files/read_file round trip
+// would have cost.
+const MAX_ORIENTATION_FILES = 80;
+const MAX_ORIENTATION_CHARS = 1_500;
 
 function normalizeDirPath(dirPath?: string): string {
   return (dirPath ?? "").replace(/^\/+/, "").replace(/\/+$/, "");
@@ -119,6 +130,48 @@ export function readFile(root: TemplateFolder, filePath: string): ReadFileResult
   }
 
   return { path: filePath, content, truncated };
+}
+
+/**
+ * Cheap, non-AI orientation dump: directory structure + per-file line
+ * counts, no content. Meant to replace the model's first couple of
+ * list_files calls on a fresh run, not to substitute for read_file/
+ * search_codebase on anything it actually needs to inspect.
+ */
+export function buildProjectOrientation(root: TemplateFolder): string {
+  const lines: string[] = [];
+  let fileCount = 0;
+  let truncated = false;
+
+  function walk(folder: TemplateFolder, depth: number) {
+    for (const item of folder.items) {
+      if (fileCount >= MAX_ORIENTATION_FILES) {
+        truncated = true;
+        return;
+      }
+      if ("folderName" in item) {
+        lines.push(`${"  ".repeat(depth)}${item.folderName}/`);
+        walk(item, depth + 1);
+      } else {
+        if (item.encoding === "base64" || isBinaryFileExtension(item.fileExtension)) continue;
+        const name = getFileDisplayName(item.filename, item.fileExtension);
+        const lineCount = typeof item.content === "string" ? item.content.split("\n").length : 0;
+        lines.push(`${"  ".repeat(depth)}${name} (${lineCount} lines)`);
+        fileCount += 1;
+      }
+    }
+  }
+  walk(root, 0);
+
+  let text = lines.join("\n");
+  if (text.length > MAX_ORIENTATION_CHARS) {
+    text = text.slice(0, MAX_ORIENTATION_CHARS);
+    truncated = true;
+  }
+  if (truncated) {
+    text += "\n[…more files not shown — use list_files or search_codebase to explore further]";
+  }
+  return text;
 }
 
 export interface SearchMatch {

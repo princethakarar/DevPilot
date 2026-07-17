@@ -10,6 +10,24 @@ interface IdePreviewProps {
   instance: any;
 }
 
+/**
+ * Browsers no-op re-assigning an iframe's `src` to the value it already
+ * has — so restarting the dev server on the same port (same URL) or
+ * clicking "Reload preview" on an already-loaded URL silently did nothing,
+ * leaving the panel showing whatever was left from the dead connection.
+ * Detach through about:blank first so the browser sees a real navigation.
+ */
+function forceIframeReload(iframe: HTMLIFrameElement, url: string) {
+  if (iframe.src === url) {
+    iframe.src = "about:blank";
+    requestAnimationFrame(() => {
+      iframe.src = url;
+    });
+  } else {
+    iframe.src = url;
+  }
+}
+
 export function IdePreview({ instance }: IdePreviewProps) {
   const { detectedServerUrl, setDetectedServerUrl } = useIdeLayout();
   const [currentUrl, setCurrentUrl] = useState<string | null>(null);
@@ -26,6 +44,14 @@ export function IdePreview({ instance }: IdePreviewProps) {
     const handleServerReady = (port: number, url: string) => {
       console.log(`Server ready on port ${port}, url: ${url}`);
       setDetectedServerUrl(url);
+      // This fires on every real "server-ready" event, including a restart
+      // that comes back up on the SAME port/URL — unlike the state update
+      // above, which React will skip re-propagating since the string value
+      // didn't change. The iframe's old connection is dead either way, so
+      // force it to actually re-navigate here, at the event itself.
+      if (iframeRef.current) {
+        forceIframeReload(iframeRef.current, url);
+      }
     };
 
     instance.on("server-ready", handleServerReady);
@@ -37,7 +63,7 @@ export function IdePreview({ instance }: IdePreviewProps) {
 
   const handleRefresh = () => {
     if (iframeRef.current && currentUrl) {
-      iframeRef.current.src = currentUrl;
+      forceIframeReload(iframeRef.current, currentUrl);
     }
   };
 

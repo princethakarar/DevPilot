@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { listFiles, readFile, searchCodebase } from "../context-tools";
+import { listFiles, readFile, searchCodebase, buildProjectOrientation } from "../context-tools";
 import type { TemplateFolder } from "@/modules/playground/lib/path-to-json";
 
 const tree: TemplateFolder = {
@@ -61,5 +61,33 @@ describe("searchCodebase", () => {
   it("never returns matches from a binary file", () => {
     const result = searchCodebase(tree, "PNG");
     expect(result.matches.every((m) => m.path !== "src/icon.png")).toBe(true);
+  });
+});
+
+describe("buildProjectOrientation", () => {
+  it("lists files with line counts and folders with a trailing slash, but no file content", () => {
+    const orientation = buildProjectOrientation(tree);
+    expect(orientation).toContain("package.json (1 lines)");
+    expect(orientation).toContain("src/");
+    expect(orientation).toContain("add.js (4 lines)");
+    expect(orientation).not.toContain("return a - b");
+  });
+
+  it("omits binary files", () => {
+    expect(buildProjectOrientation(tree)).not.toContain("icon.png");
+  });
+
+  it("stays small — cheap enough to pay on every turn for the whole run", () => {
+    // 1500-char cap plus a little slack for the truncation notice.
+    expect(buildProjectOrientation(tree).length).toBeLessThan(1600);
+  });
+
+  it("truncates and adds a notice once a project has more files than the cap", () => {
+    const bigTree: TemplateFolder = {
+      folderName: "root",
+      items: Array.from({ length: 120 }, (_, i) => ({ filename: `file${i}`, fileExtension: "ts", content: "x" })),
+    };
+    const orientation = buildProjectOrientation(bigTree);
+    expect(orientation).toContain("more files not shown");
   });
 });

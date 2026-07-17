@@ -1,4 +1,5 @@
 import { AGENT_TOOLS } from "./tools";
+import { estimateRequestTokens, waitForTokenBudget, reserveEstimate, finalizeReservation, releaseReservation } from "./token-budget";
 
 /**
  * Model chosen for the autonomous loop after a live head-to-head test against
@@ -81,32 +82,57 @@ function parseRateLimitInfo(bodyText: string, retryAfterHeader: string | null): 
  * streamed — the orchestrator needs the complete tool_calls array to route,
  * not a token stream; live progress is communicated to the frontend via the
  * orchestrator's own SSE events, not raw model output.
+ *
+ * Before firing, paces against the global token-budget ledger (token-budget.ts)
+ * so this call — and every other call in this process, across every run —
+ * doesn't fire straight into a 429 that reactive retry would then have to
+ * clean up. `onStatus` surfaces both the pacing wait and (via the caller,
+ * rate-limit-retry.ts) any reactive retry wait as one continuous live status.
  */
-export async function callAgentModel(messages: AgentModelMessage[]): Promise<AgentModelResult> {
+export async function callAgentModel(
+  messages: AgentModelMessage[],
+  onStatus?: (message: string) => void | Promise<void>
+): Promise<AgentModelResult> {
   const apiKey = process.env.GROQ_API_KEY;
   if (!apiKey) {
     throw new AgentModelError("GROQ_API_KEY is not configured in the environment.");
   }
   const model = process.env.AGENT_GROQ_MODEL || DEFAULT_AGENT_MODEL;
 
-  const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model,
-      messages,
-      tools: AGENT_TOOLS,
-      tool_choice: "auto",
-      temperature: 0.2,
-      max_tokens: 2000,
-    }),
-    signal: AbortSignal.timeout(60_000),
+  const estimate = estimateRequestTokens(messages);
+  await waitForTokenBudget(estimate, async (waitMs) => {
+    if (onStatus) await onStatus(`Pacing request — waiting ~${Math.ceil(waitMs / 1000)}s to stay under the AI provider's rate limit…`);
   });
 
+  const reservationId = reserveEstimate(estimate);
+  let response: Response;
+  try {
+    response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model,
+        messages,
+        tools: AGENT_TOOLS,
+        tool_choice: "auto",
+        temperature: 0.2,
+        max_tokens: 2000,
+      }),
+      signal: AbortSignal.timeout(60_000),
+    });
+  } catch (err) {
+    // Never actually reached Groq, so nothing was billed against the window.
+    releaseReservation(reservationId);
+    throw err;
+  }
+
   if (!response.ok) {
+    // A rejected/failed request isn't billed — release, don't finalize, so
+    // the ledger reflects real consumption, not attempted consumption.
+    releaseReservation(reservationId);
     const bodyText = await response.text().catch(() => "");
     if (response.status === 429 || response.status === 413) {
       const info = parseRateLimitInfo(bodyText, response.headers.get("retry-after"));
@@ -118,6 +144,7 @@ export async function callAgentModel(messages: AgentModelMessage[]): Promise<Age
   const data = await response.json();
   const message = data.choices?.[0]?.message;
   if (!message) {
+    releaseReservation(reservationId);
     throw new AgentModelError("Agent model returned no message.");
   }
 
@@ -138,5 +165,6 @@ export async function callAgentModel(messages: AgentModelMessage[]): Promise<Age
     data.usage?.total_tokens ??
     Math.ceil((JSON.stringify(messages).length + JSON.stringify(message).length) / 4);
 
+  finalizeReservation(reservationId, approxTokens);
   return { message, toolCalls, approxTokens };
 }

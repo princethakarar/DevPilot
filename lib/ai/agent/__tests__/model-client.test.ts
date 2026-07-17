@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { callAgentModel, AgentModelError, AgentRateLimitError } from "../model-client";
+import { reserveEstimate, releaseReservation, __resetTokenBudgetForTests } from "../token-budget";
 
 function jsonResponse(status: number, body: unknown, headers: Record<string, string> = {}) {
   return {
@@ -14,6 +15,7 @@ function jsonResponse(status: number, body: unknown, headers: Record<string, str
 describe("callAgentModel — rate limit error classification", () => {
   beforeEach(() => {
     process.env.GROQ_API_KEY = "test-key";
+    __resetTokenBudgetForTests();
   });
   afterEach(() => {
     vi.unstubAllGlobals();
@@ -89,5 +91,33 @@ describe("callAgentModel — rate limit error classification", () => {
     const result = await callAgentModel([{ role: "user", content: "hi" }]);
     expect(result.approxTokens).toBe(123);
     expect(result.toolCalls).toEqual([]);
+  });
+
+  it("paces the request when the global token budget is already full, reporting the wait via onStatus, then proceeds once it frees up", async () => {
+    vi.useFakeTimers();
+    const reservationId = reserveEstimate(5000); // fills the ~4800-token safety budget on its own
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        jsonResponse(200, {
+          choices: [{ message: { role: "assistant", content: "done", tool_calls: [] } }],
+          usage: { total_tokens: 50 },
+        })
+      )
+    );
+    const statusMessages: string[] = [];
+    const callPromise = callAgentModel([{ role: "user", content: "hi" }], (m) => {
+      statusMessages.push(m);
+    });
+
+    await vi.advanceTimersByTimeAsync(100);
+    expect(statusMessages.some((m) => m.includes("Pacing request"))).toBe(true);
+
+    releaseReservation(reservationId);
+    await vi.advanceTimersByTimeAsync(2100); // past the pacer's poll interval, so it re-checks and proceeds
+
+    const result = await callPromise;
+    expect(result.approxTokens).toBe(50);
+    vi.useRealTimers();
   });
 });

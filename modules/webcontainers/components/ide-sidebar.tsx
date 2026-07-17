@@ -92,23 +92,22 @@ export function IdeActivityBar({ activeTab, setActiveTab }: IdeActivityBarProps)
 }
 
 export function IdeSidebar({ children, sourceControlContent, agentContent, activeTab }: IdeSidebarProps) {
+  // Every panel stays mounted and is only hidden via CSS, not conditionally
+  // rendered — the agent panel owns a live SSE connection (see useAgentRun)
+  // that runs a real autonomous task server-side. Unmounting it on a tab
+  // switch cancels that stream, which the server treats as a disconnect and
+  // tears the run down entirely, so switching back finds nothing to resume.
   return (
     <div className="flex-1 flex flex-col min-w-0 bg-sidebar h-full overflow-hidden border-r border-border">
-        {activeTab === "explorer" && (
-          <div className="flex-1 overflow-hidden h-full">
-            {children}
-          </div>
-        )}
-        {activeTab === "source-control" && (
-          <div className="flex-1 overflow-hidden h-full">
-            {sourceControlContent}
-          </div>
-        )}
-        {activeTab === "agent" && (
-          <div className="flex-1 overflow-hidden h-full">
-            {agentContent}
-          </div>
-        )}
+      <div className="flex-1 overflow-hidden h-full" style={{ display: activeTab === "explorer" ? "block" : "none" }}>
+        {children}
       </div>
+      <div className="flex-1 overflow-hidden h-full" style={{ display: activeTab === "source-control" ? "block" : "none" }}>
+        {sourceControlContent}
+      </div>
+      <div className="flex-1 overflow-hidden h-full" style={{ display: activeTab === "agent" ? "block" : "none" }}>
+        {agentContent}
+      </div>
+    </div>
   );
 }

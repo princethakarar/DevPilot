@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { trimToolResultHistory } from "../context-trim";
+import { trimToolResultHistory, findLiveReadPaths } from "../context-trim";
 import type { AgentModelMessage } from "../model-client";
 
 function toolMsg(name: string, content: string): AgentModelMessage {
@@ -75,5 +75,36 @@ describe("trimToolResultHistory", () => {
     const messages: AgentModelMessage[] = [toolMsg("read_file", "not json ".repeat(30)), toolMsg("read_file", "y".repeat(300))];
     expect(() => trimToolResultHistory(messages, 0)).not.toThrow();
     expect(messages[0].content).toBe("[Previously tool result omitted from context to save tokens]");
+  });
+});
+
+describe("findLiveReadPaths", () => {
+  it("marks a path live after an untrimmed read_file result", () => {
+    const messages: AgentModelMessage[] = [toolMsg("read_file", JSON.stringify({ path: "src/x.ts", content: "hi" }))];
+    expect(findLiveReadPaths(messages).has("src/x.ts")).toBe(true);
+  });
+
+  it("does not mark a path live once its read_file result has been trimmed to a placeholder", () => {
+    const messages: AgentModelMessage[] = [toolMsg("read_file", LONG_READ_RESULT), toolMsg("search_codebase", LONG_SEARCH_RESULT)];
+    trimToolResultHistory(messages, 1); // trims the read_file (only the most recent — search_codebase — stays full)
+    expect(findLiveReadPaths(messages).has("src/big.ts")).toBe(false);
+  });
+
+  it("invalidates liveness after a later write_file to the same path — never points at stale content", () => {
+    const messages: AgentModelMessage[] = [
+      toolMsg("read_file", JSON.stringify({ path: "src/x.ts", content: "old" })),
+      toolMsg("write_file", "OK: wrote src/x.ts"),
+    ];
+    expect(findLiveReadPaths(messages).has("src/x.ts")).toBe(false);
+  });
+
+  it("normalizes a leading slash so 'src/x.ts' and '/src/x.ts' are treated as the same path", () => {
+    const messages: AgentModelMessage[] = [toolMsg("read_file", JSON.stringify({ path: "/src/x.ts", content: "hi" }))];
+    expect(findLiveReadPaths(messages).has("src/x.ts")).toBe(true);
+  });
+
+  it("ignores a read_file error result — an error isn't content worth deduping against", () => {
+    const messages: AgentModelMessage[] = [toolMsg("read_file", JSON.stringify({ path: "src/missing.ts", error: "File not found: src/missing.ts" }))];
+    expect(findLiveReadPaths(messages).has("src/missing.ts")).toBe(false);
   });
 });

@@ -9,34 +9,26 @@ import {
   setAgentRunCheckpointBefore,
   findAgentRunById,
 } from "@/lib/db/repositories/agentRuns";
-import { listFiles, readFile, searchCodebase } from "./context-tools";
+import { listFiles, readFile, searchCodebase, buildProjectOrientation, MAX_BATCH_READ_FILES } from "./context-tools";
 import { writeFile } from "./file-tools";
 import { checkCommandAllowed, detectPackageManager, getPackageJsonScripts } from "./allowlist";
 import { type AgentModelMessage, AgentModelError } from "./model-client";
 import { AGENT_SYSTEM_PROMPT } from "./tools";
 import { AGENT_CAPS, StallTracker } from "./stall-detector";
 import { emitRunEvent, isStopRequested, requestBrowserCommand, type CommandExecutionResult } from "./relay";
-import { trimToolResultHistory } from "./context-trim";
+import { trimToolResultHistory, findLiveReadPaths } from "./context-trim";
 import { callModelWithRateLimitHandling } from "./rate-limit-retry";
+import { estimateRequestTokens, TPM_LIMIT_ESTIMATE, TPM_SAFETY_RATIO } from "./token-budget";
 
-// Groq's on-demand tier TPM budget for qwen/qwen3-32b is a hard 6000 tokens
-// PER REQUEST (not just cumulative over time) — confirmed live: a single
-// untrimmed tool result alone hit 14,274 tokens on turn 2 of a real run.
-// Keep a real safety margin below it, not right up against it.
-const TPM_LIMIT_ESTIMATE = 6000;
-const TPM_SAFETY_RATIO = 0.8;
-// AGENT_TOOLS' JSON (~669 tokens measured) is sent on every call but isn't
-// part of `messages` itself, so the char/4 estimate over `messages` alone
-// would undercount every request by that much.
-const TOOL_SCHEMA_TOKEN_OVERHEAD = 700;
 // Only the most recent tool result is kept in full on every turn — evidence-
 // driven, not the spec's "1-2" range's upper bound: a single real file read
 // already exceeded the ENTIRE budget, so keeping 2 full results is not a
 // safe default here.
 const MAX_FULL_TOOL_RESULTS = 1;
 
-function estimateRequestTokens(messages: AgentModelMessage[]): number {
-  return Math.ceil(JSON.stringify(messages).length / 4) + TOOL_SCHEMA_TOKEN_OVERHEAD;
+function alreadyProvidedNote(path: string): string {
+  const normalized = path.replace(/^\/+/, "");
+  return `Already provided above in this run's context for ${normalized} — no need to re-read unless the file may have changed since.`;
 }
 
 export interface RunAgentParams {
@@ -126,9 +118,10 @@ export async function runAgentOrchestrator({ runId, playgroundId, task }: RunAge
       return;
     }
 
+    const orientation = buildProjectOrientation(tree);
     const messages: AgentModelMessage[] = [
       { role: "system", content: AGENT_SYSTEM_PROMPT },
-      { role: "user", content: `Task: ${task}` },
+      { role: "user", content: `Task: ${task}\n\nProject file tree (for orientation — use list_files/read_file/search_codebase for anything not shown here):\n${orientation}` },
     ];
 
     const stallTracker = new StallTracker();
@@ -233,8 +226,22 @@ export async function runAgentOrchestrator({ runId, playgroundId, task }: RunAge
             break;
           }
           case "read_file": {
-            const r = readFile(tree, String(call.arguments.path ?? ""));
-            toolResultContent = JSON.stringify(r);
+            const p = String(call.arguments.path ?? "");
+            const normalized = p.replace(/^\/+/, "");
+            toolResultContent = findLiveReadPaths(messages).has(normalized)
+              ? JSON.stringify({ path: p, note: alreadyProvidedNote(p) })
+              : JSON.stringify(readFile(tree, p));
+            break;
+          }
+          case "read_files": {
+            const rawPaths = Array.isArray(call.arguments.paths) ? call.arguments.paths : [];
+            const paths = rawPaths.map((x) => String(x)).slice(0, MAX_BATCH_READ_FILES);
+            const live = findLiveReadPaths(messages);
+            const files = paths.map((p) => {
+              const normalized = p.replace(/^\/+/, "");
+              return live.has(normalized) ? { path: p, note: alreadyProvidedNote(p) } : readFile(tree, p);
+            });
+            toolResultContent = JSON.stringify({ files });
             break;
           }
           case "search_codebase": {
