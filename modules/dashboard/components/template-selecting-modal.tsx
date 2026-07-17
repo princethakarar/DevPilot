@@ -118,7 +118,7 @@ const TemplateSelectionModal = ({
       <DialogContent
         showCloseButton={false}
         style={MODAL_VARS}
-        className="sm:max-w-[560px] rounded-[var(--dp-radius)] border border-[var(--dp-border)] bg-[var(--dp-bg-modal)] p-5 text-[#e8f4ff] font-sans shadow-[0_0_0_1px_rgba(0,207,255,0.08),0_25px_60px_-15px_rgba(0,0,0,0.65),0_0_45px_-12px_var(--dp-glow-cyan),0_0_65px_-20px_var(--dp-glow-purple)] duration-200 ease-out data-open:zoom-in-95 data-closed:zoom-out-95"
+        className="sm:max-w-[560px] max-h-[85vh] overflow-y-auto rounded-[var(--dp-radius)] border border-[var(--dp-border)] bg-[var(--dp-bg-modal)] p-5 text-[#e8f4ff] font-sans shadow-[0_0_0_1px_rgba(0,207,255,0.08),0_25px_60px_-15px_rgba(0,0,0,0.65),0_0_45px_-12px_var(--dp-glow-cyan),0_0_65px_-20px_var(--dp-glow-purple)] duration-200 ease-out data-open:zoom-in-95 data-closed:zoom-out-95"
       >
         <DialogClose asChild>
           <button

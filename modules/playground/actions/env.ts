@@ -5,8 +5,6 @@ import { findEnvVarsByPlayground, replaceEnvVarsForPlayground } from "@/lib/db/r
 import { currentUser } from "@/modules/auth/actions";
 import type { EnvVarPair } from "../lib/env-merge";
 
-export type { EnvVarPair };
-
 async function assertOwner(playgroundId: string, userId: string): Promise<boolean> {
   const playground = await findPlaygroundById(playgroundId, {
     projection: { userId: 1 },
