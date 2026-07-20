@@ -1,16 +1,21 @@
 import type { AgentModelMessage } from "./model-client";
 
 /**
- * Global (app-wide, not per-run/per-user) proactive pacer for Groq's
- * qwen/qwen3-32b TPM budget. Phase 0 measurement confirmed the 6000 TPM
- * limit is scoped to the org+model, not the task or the user — a live run
- * showed ~1650 tokens of "Used" budget from an unrelated source before this
- * run's own first call had even completed. A per-run tracker would miss
- * that; this one is a single module-level ledger shared by every call this
- * Next.js process makes, same single-process tradeoff already accepted by
+ * Global (app-wide, not per-run/per-user) proactive pacer for the agent
+ * model's Groq TPM (tokens-per-minute) budget. Phase 0 measurement against
+ * qwen/qwen3-32b (the model in use at the time) confirmed the 6000 TPM limit
+ * is scoped to the org+model, not the task or the user — a live run showed
+ * ~1650 tokens of "Used" budget from an unrelated source before this run's
+ * own first call had even completed. A per-run tracker would miss that; this
+ * one is a single module-level ledger shared by every call this Next.js
+ * process makes, same single-process tradeoff already accepted by
  * lib/ai/rate-limiter.ts and lib/ai/agent/relay.ts — not multi-instance-safe,
  * fine for this app's current deployment.
  *
+ * The 6000 figure is a conservative baseline carried over from that
+ * measurement, not a live lookup against whatever AGENT_GROQ_MODEL is
+ * currently configured (model-client.ts) — if that's changed to a model with
+ * a materially different published TPM limit, re-measure and update this.
  * This is prevention, not the only defense: rate-limit-retry.ts's reactive
  * 429/413 handling stays in place as a fallback for whatever this can't
  * catch (a concurrent process outside this one, an estimate that undershoots).
@@ -87,11 +92,17 @@ export function releaseReservation(id: number): void {
 export async function waitForTokenBudget(
   estimatedTokens: number,
   onWait: (waitMs: number, usedTokens: number, budget: number) => void | Promise<void>,
-  sleep: (ms: number) => Promise<void> = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+  sleep: (ms: number) => Promise<void> = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+  // Checked every poll tick so a user-requested stop can end this wait (up to
+  // MAX_PACING_WAIT_MS ~75s) immediately rather than at its next 2s poll at
+  // the latest — the caller is expected to treat return-while-aborted as "stop,
+  // don't actually fire the call."
+  shouldStop?: () => boolean
 ): Promise<void> {
   const budget = TPM_LIMIT_ESTIMATE * TPM_SAFETY_RATIO;
   const start = Date.now();
   while (true) {
+    if (shouldStop?.()) return;
     const now = Date.now();
     const used = usedTokens(now);
     if (used + estimatedTokens <= budget) return;

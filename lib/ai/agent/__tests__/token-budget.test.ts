@@ -74,4 +74,18 @@ describe("token-budget ledger", () => {
     );
     expect(waited).toBe(false);
   });
+
+  it("returns immediately once shouldStop() is true, even while the budget is still full", async () => {
+    reserveEstimate(5000); // near the safety budget — would otherwise keep polling
+    let waitCalls = 0;
+    await waitForTokenBudget(
+      1000,
+      () => {
+        waitCalls += 1;
+      },
+      noSleep,
+      () => true
+    );
+    expect(waitCalls).toBe(0);
+  });
 });

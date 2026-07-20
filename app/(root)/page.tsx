@@ -36,7 +36,7 @@ export default function Home() {
             </div>
           </Link>
           <ul className="hidden md:flex gap-8 list-none">
-            {[["#features", "Features"], ["#demo", "Editor"], ["#workflow", "Workflow"], ["#chat-demo", "AI Chat"], ["#pricing", "Pricing"]].map(([href, label], i) => (
+            {[["#features", "Features"], ["#demo", "Editor"], ["#workflow", "Workflow"], ["#chat-demo", "AI Chat"]].map(([href, label], i) => (
               <li key={i}><a href={href} className="text-[13px] tracking-[0.08em] text-[#7ca8cc] no-underline uppercase hover:text-[#00b4ff] transition-colors">{label}</a></li>
             ))}
           </ul>

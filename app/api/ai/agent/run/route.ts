@@ -2,8 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { currentUser } from "@/modules/auth/actions";
 import { findPlaygroundById } from "@/lib/db/repositories/playgrounds";
 import { createAgentRun } from "@/lib/db/repositories/agentRuns";
-import { checkAgentRunAllowed } from "@/lib/ai/agent/run-rate-limiter";
-import { registerRunEmitter, unregisterRunEmitter, type RelayEvent } from "@/lib/ai/agent/relay";
+import { checkAgentRunAllowed, stopActiveProjectRuns } from "@/lib/ai/agent/run-rate-limiter";
+import { registerRunEmitter, unregisterRunEmitter, clearStop, type RelayEvent } from "@/lib/ai/agent/relay";
 import { runAgentOrchestrator } from "@/lib/ai/agent/orchestrator";
 
 // Long-running (up to the 5-minute agent cap) SSE response — must run on the
@@ -47,6 +47,19 @@ export async function POST(req: NextRequest) {
   // Redis-backed store (lib/checkpoint/store.ts), which doesn't depend on
   // GitHub at all.
 
+  // Starting a new task for this project supersedes any task already running
+  // for it, rather than making the user manually stop-then-retry — see
+  // stopActiveProjectRuns' doc comment. checkAgentRunAllowed's own
+  // activeForProject check stays in place right after as a safety net for
+  // the (rare, timeout) case this couldn't clear it.
+  const previousRunsStopped = await stopActiveProjectRuns(projectId);
+  if (!previousRunsStopped) {
+    return NextResponse.json(
+      { error: "RATE_LIMITED", message: "Couldn't stop the previous task in time — try again in a moment." },
+      { status: 429 }
+    );
+  }
+
   const rateCheck = await checkAgentRunAllowed(user.id, projectId);
   if (!rateCheck.allowed) {
     return NextResponse.json({ error: "RATE_LIMITED", message: rateCheck.reason }, { status: 429 });
@@ -84,6 +97,7 @@ export async function POST(req: NextRequest) {
         .finally(() => {
           clearInterval(heartbeat);
           unregisterRunEmitter(run.id);
+          clearStop(run.id);
           closed = true;
           try {
             controller.close();

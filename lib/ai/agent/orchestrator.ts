@@ -15,9 +15,9 @@ import { checkCommandAllowed, detectPackageManager, getPackageJsonScripts } from
 import { type AgentModelMessage, AgentModelError } from "./model-client";
 import { AGENT_SYSTEM_PROMPT } from "./tools";
 import { AGENT_CAPS, StallTracker } from "./stall-detector";
-import { emitRunEvent, isStopRequested, requestBrowserCommand, type CommandExecutionResult } from "./relay";
+import { emitRunEvent, isStopRequested, getStopSignal, requestBrowserCommand, type CommandExecutionResult } from "./relay";
 import { trimToolResultHistory, findLiveReadPaths } from "./context-trim";
-import { callModelWithRateLimitHandling } from "./rate-limit-retry";
+import { callModelWithRateLimitHandling, createModelFallbackState } from "./rate-limit-retry";
 import { estimateRequestTokens, TPM_LIMIT_ESTIMATE, TPM_SAFETY_RATIO } from "./token-budget";
 
 // Only the most recent tool result is kept in full on every turn — evidence-
@@ -35,6 +35,22 @@ export interface RunAgentParams {
   runId: string;
   playgroundId: string;
   task: string;
+}
+
+// npm/yarn/pnpm install/run/test commands (the only ones the allowlist ever
+// permits besides near-instant read-only git status/diff) can legitimately
+// take well over the old flat 45s budget inside a WASM-sandboxed WebContainer
+// — confirmed live: `npm run build` (tsc && vite build, a small project) was
+// still genuinely running past two full minutes, well past the 45s and then
+// 120s this was first raised to. tsc's cold startup inside WebContainer's
+// WASM VFS is apparently far slower than native, independent of project
+// size — see AGENTS.md's "Boot Reliability System" for the same class of
+// WASM filesystem slowness after an install. git status/diff stay on the
+// short default since they're effectively instant and a hung one likely
+// does mean a dead tab.
+const SLOW_COMMAND_TIMEOUT_MS = 240_000;
+function commandTimeoutMs(command: string): number {
+  return /^(npm|yarn|pnpm)\b/.test(command.trim()) ? SLOW_COMMAND_TIMEOUT_MS : 45_000;
 }
 
 function shortSummary(text: string, max = 72): string {
@@ -124,6 +140,14 @@ export async function runAgentOrchestrator({ runId, playgroundId, task }: RunAge
       { role: "user", content: `Task: ${task}\n\nProject file tree (for orientation — use list_files/read_file/search_codebase for anything not shown here):\n${orientation}` },
     ];
 
+    // Created once, up front — must exist before the first requestStop() call
+    // for this run so that call's abort() actually reaches every wait below
+    // (getStopSignal creates the controller lazily, keyed by runId).
+    const stopSignal = getStopSignal(runId);
+    // Shared across every turn of this run — once one turn falls back to the
+    // secondary model (rate-limit-retry.ts), every later turn starts there
+    // too instead of re-trying the already-known-bad primary from scratch.
+    const modelFallbackState = createModelFallbackState();
     const stallTracker = new StallTracker();
     let toolCallCount = 0;
     let approxTokens = 0;
@@ -170,8 +194,23 @@ export async function runAgentOrchestrator({ runId, playgroundId, task }: RunAge
 
       let outcome: Awaited<ReturnType<typeof callModelWithRateLimitHandling>>;
       try {
-        outcome = await callModelWithRateLimitHandling(messages, (statusMessage) => log(runId, "status", statusMessage));
+        outcome = await callModelWithRateLimitHandling(
+          messages,
+          (statusMessage) => log(runId, "status", statusMessage),
+          undefined,
+          stopSignal,
+          modelFallbackState
+        );
       } catch (err) {
+        // A user-requested stop aborts the in-flight fetch (relay.ts's
+        // getStopSignal), which surfaces here as a raw AbortError, not a
+        // clean outcome — check for that first so Stop reports "stopped",
+        // not a scary "model could not be reached".
+        if (isStopRequested(runId)) {
+          finalStatus = "stopped";
+          blockedReason = "Stopped by user request.";
+          break;
+        }
         const message = err instanceof AgentModelError ? err.message : String(err);
         await log(runId, "error", `Model call failed: ${message}`);
         finalStatus = "blocked";
@@ -180,9 +219,19 @@ export async function runAgentOrchestrator({ runId, playgroundId, task }: RunAge
       }
 
       if (!outcome.ok) {
+        if (isStopRequested(runId)) {
+          finalStatus = "stopped";
+          blockedReason = "Stopped by user request.";
+          break;
+        }
         finalStatus = "blocked";
         blockedReason = outcome.reason;
-        await log(runId, "error", outcome.reason);
+        await log(
+          runId,
+          "error",
+          outcome.reason,
+          outcome.failedGeneration ? { failedGeneration: outcome.failedGeneration.slice(0, 1000) } : undefined
+        );
         break;
       }
 
@@ -278,7 +327,7 @@ export async function runAgentOrchestrator({ runId, playgroundId, task }: RunAge
               }
             } else {
               try {
-                const execResult = await requestBrowserCommand(runId, command);
+                const execResult = await requestBrowserCommand(runId, command, commandTimeoutMs(command));
                 toolResultContent = formatCommandResult(execResult);
                 if (execResult.exitCode === 0) {
                   stallTracker.recordSuccess();

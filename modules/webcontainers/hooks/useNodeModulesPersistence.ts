@@ -5,6 +5,7 @@ import type { WebContainer } from "@webcontainer/api";
 import { toast } from "sonner";
 import type { TemplateFolder, TemplateItem } from "@/modules/playground/lib/path-to-json";
 import { fallbackToNpmInstall } from "@/lib/snapshot/loader";
+import { checkForPartialInstall } from "@/lib/boot/install-verifier";
 import {
   computePackageJsonHash,
   tryRestoreNodeModules,
@@ -79,9 +80,23 @@ export function useNodeModulesPersistence(
         const pkgHash = await computePackageJsonHash(pkgJson);
         if (cancelled) return;
 
-        const restored = await tryRestoreNodeModules(instance, pkgHash);
+        let restored = await tryRestoreNodeModules(instance, pkgHash);
         if (restored) {
-          console.info("[DevPilot] Restored node_modules from local cache — no install needed.");
+          // The IndexedDB bundle format can't represent symlinks (see
+          // node-modules-persistence.ts's walkDir), so node_modules/.bin —
+          // which npm populates entirely with symlinks — never makes it into
+          // the cache. A restore that "succeeds" can still leave every
+          // package script (dev/build/etc.) unable to resolve its binary.
+          // Verify before trusting it, and repair with a real install if not.
+          const broken = await checkForPartialInstall(instance);
+          if (broken) {
+            console.warn(
+              "[DevPilot] Cached node_modules is missing node_modules/.bin — repairing with a real install."
+            );
+            restored = false;
+          } else {
+            console.info("[DevPilot] Restored node_modules from local cache — no install needed.");
+          }
         }
         if (cancelled) return;
 
@@ -89,9 +104,11 @@ export function useNodeModulesPersistence(
           captureAndStoreNodeModules(instance, pkgHash).catch(() => {});
         });
 
-        // Nothing cached and this template actually has dependencies — install
-        // automatically instead of leaving the user to type `npm install`
-        // themselves. The plain Node starter has none, so it's skipped entirely.
+        // Nothing usable cached — either nothing was cached, or a restored
+        // bundle failed the integrity check above — and this template
+        // actually has dependencies: install automatically instead of
+        // leaving the user to type `npm install` themselves. The plain Node
+        // starter has none, so it's skipped entirely.
         if (!restored && hasDeclaredDependencies(pkgJson)) {
           const toastId = toast.info("Installing dependencies…");
           const result = await fallbackToNpmInstall(instance, () => {});

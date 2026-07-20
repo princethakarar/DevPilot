@@ -140,6 +140,17 @@ export function IdeTerminal({ instance, projectName }: IdeTerminalProps) {
     term.loadAddon(webLinksAddon);
     term.open(container);
 
+    // jsh is WebContainer's own minimal POSIX-ish shell, not a real Linux
+    // userland — there's no package manager underneath it to install real
+    // coreutils, so grep/find/wc/etc. genuinely don't exist here (by
+    // platform design, not a bug). node, npm, and git work. One-time notice
+    // on the first tab only — repeating it on every new tab would be noise.
+    if (id === "1") {
+      term.writeln(
+        "\x1b[2mjsh is a sandboxed shell — node, npm, and git work, but Unix utilities like grep/find/wc aren't available. Use the file explorer's search or the AI agent for text search instead.\x1b[0m"
+      );
+    }
+
     // Let the container/font finish laying out before the first fit — fitting
     // against a not-yet-stable box is what desyncs the PTY's column count from
     // the visual width and causes wrapped/duplicated text once output streams in.

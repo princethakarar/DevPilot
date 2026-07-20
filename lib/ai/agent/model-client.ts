@@ -2,14 +2,42 @@ import { AGENT_TOOLS } from "./tools";
 import { estimateRequestTokens, waitForTokenBudget, reserveEstimate, finalizeReservation, releaseReservation } from "./token-budget";
 
 /**
- * Model chosen for the autonomous loop after a live head-to-head test against
- * a deliberately-buggy fix-and-verify scenario (see conversation/PR notes):
- * qwen/qwen3-32b was the only one of three Groq-hosted candidates that
- * reliably completed read -> write -> verify -> mark_complete without a
- * malformed tool call or silently stopping short of signaling done. Reuses
- * the existing GROQ_API_KEY — no new provider/billing setup needed.
+ * Default model for the autonomous loop. Previously pinned to
+ * "qwen/qwen3-32b" after a head-to-head test found it reliably completed
+ * read -> write -> verify -> mark_complete without malformed tool calls —
+ * but Groq has since removed that model entirely (requests now 404 with
+ * "model_not_found"), which broke every agent run until someone noticed and
+ * manually redeployed with AGENT_GROQ_MODEL set. Falling back to the same
+ * model the plain chat route already uses successfully (app/api/chat/route.ts)
+ * — it's confirmed live/accessible with the existing GROQ_API_KEY. Override
+ * via AGENT_GROQ_MODEL if Groq deprecates this one too or a better-tested
+ * candidate is found.
  */
-const DEFAULT_AGENT_MODEL = "qwen/qwen3-32b";
+const DEFAULT_AGENT_MODEL = "llama-3.3-70b-versatile";
+
+/**
+ * Automatic fallback for the exact failure class that caused the outage
+ * above: rate-limit-retry.ts switches to this model — without waiting for a
+ * human to notice and redeploy — when the primary is unavailable
+ * (renamed/decommissioned), when it exhausts its rate-limit retries, or when
+ * it repeatedly fails to produce a valid tool call. Deliberately a
+ * different model, not just a different name for the same one, so a
+ * provider-side incident scoped to one model (an outage, a TPM budget that's
+ * saturated, a deprecation) doesn't take out the fallback along with it.
+ * "llama-3.1-8b-instant" is Groq's smaller, separately-rate-limited Llama
+ * model — well-established tool-calling support, and its own TPM budget is
+ * untouched by whatever exhausted the primary's. Override via
+ * AGENT_GROQ_FALLBACK_MODEL.
+ */
+const DEFAULT_FALLBACK_AGENT_MODEL = "llama-3.1-8b-instant";
+
+export function resolvePrimaryModel(): string {
+  return process.env.AGENT_GROQ_MODEL || DEFAULT_AGENT_MODEL;
+}
+
+export function resolveFallbackModel(): string {
+  return process.env.AGENT_GROQ_FALLBACK_MODEL || DEFAULT_FALLBACK_AGENT_MODEL;
+}
 
 export interface AgentToolCall {
   id: string;
@@ -59,6 +87,52 @@ export class AgentRateLimitError extends AgentModelError {
   }
 }
 
+/**
+ * Groq-specific failure mode distinct from rate limiting: the model itself
+ * produced malformed/invalid JSON for a tool call and Groq's own schema
+ * validation rejected it before it ever reached us — reported as a 400 with
+ * "Failed to call a function. Please adjust your prompt." and (usually) a
+ * `failed_generation` field containing the raw text the model tried to emit.
+ * Confirmed live to be prompt/turn-dependent, not a permanent per-request
+ * failure — the same conversation often succeeds on an immediate retry, so
+ * this is handled as a retryable error (see rate-limit-retry.ts) rather than
+ * failing the whole run on the first occurrence.
+ */
+export class AgentToolCallGenerationError extends AgentModelError {
+  readonly failedGeneration: string | null;
+
+  constructor(message: string, failedGeneration: string | null) {
+    super(message);
+    this.failedGeneration = failedGeneration;
+  }
+}
+
+/**
+ * Distinct from the plain AgentModelError so rate-limit-retry.ts can tell
+ * "this model is gone/misconfigured" apart from a generic/unexpected
+ * failure — retrying the SAME model on this error is pointless (it'll 404
+ * again identically), so this is the one failure mode that triggers an
+ * immediate fallback-model switch rather than a same-model retry loop.
+ */
+export class AgentModelUnavailableError extends AgentModelError {}
+
+function parseToolCallGenerationFailure(bodyText: string): { message: string; failedGeneration: string | null } | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(bodyText);
+  } catch {
+    return null;
+  }
+  const error = (parsed as { error?: { message?: string; failed_generation?: string; code?: string } } | undefined)?.error;
+  if (!error?.message) return null;
+
+  const isToolCallFailure =
+    error.code === "tool_use_failed" || /failed to call a function|adjust your prompt/i.test(error.message);
+  if (!isToolCallFailure) return null;
+
+  return { message: error.message, failedGeneration: error.failed_generation ?? null };
+}
+
 function parseRateLimitInfo(bodyText: string, retryAfterHeader: string | null): { kind: "too_large" | "rate_limited"; waitSeconds: number | null; message: string } {
   let message = bodyText;
   try {
@@ -78,6 +152,39 @@ function parseRateLimitInfo(bodyText: string, retryAfterHeader: string | null): 
 }
 
 /**
+ * Turns a failed Groq response into a short, actionable message instead of a
+ * raw JSON dump, and classifies whether it's a model-availability failure
+ * (missing/renamed/decommissioned model — the exact failure mode that broke
+ * every agent run when Groq removed qwen/qwen3-32b) so the caller can throw
+ * AgentModelUnavailableError and trigger an automatic fallback-model switch
+ * (rate-limit-retry.ts) instead of a same-model retry that would just 404
+ * again.
+ */
+function describeModelFailure(status: number, bodyText: string, model: string): { message: string; modelUnavailable: boolean } {
+  let providerMessage = bodyText;
+  let code: string | undefined;
+  try {
+    const parsed = JSON.parse(bodyText);
+    if (parsed?.error?.message) providerMessage = parsed.error.message;
+    if (parsed?.error?.code) code = parsed.error.code;
+  } catch {
+    // Not JSON — fall back to the raw body text below.
+  }
+
+  const modelUnavailable =
+    status === 404 || code === "model_not_found" || /does not exist|no such model|unknown model/i.test(providerMessage);
+
+  if (modelUnavailable) {
+    return {
+      modelUnavailable: true,
+      message: `The configured AI model ("${model}") is not available from the provider — it may have been renamed or decommissioned.`,
+    };
+  }
+
+  return { modelUnavailable: false, message: `Agent model request failed (${status}): ${providerMessage.slice(0, 500)}` };
+}
+
+/**
  * Single-turn call to the agent model with the fixed tool schema. Not
  * streamed — the orchestrator needs the complete tool_calls array to route,
  * not a token stream; live progress is communicated to the frontend via the
@@ -91,18 +198,29 @@ function parseRateLimitInfo(bodyText: string, retryAfterHeader: string | null): 
  */
 export async function callAgentModel(
   messages: AgentModelMessage[],
-  onStatus?: (message: string) => void | Promise<void>
+  onStatus?: (message: string) => void | Promise<void>,
+  stopSignal?: AbortSignal,
+  // Defaults to the primary model when omitted (existing single-model call
+  // sites, and every test, keep working unchanged) — rate-limit-retry.ts is
+  // the only caller that ever passes this explicitly, to route a given
+  // attempt at the primary or the fallback model (see resolveFallbackModel).
+  model: string = resolvePrimaryModel()
 ): Promise<AgentModelResult> {
   const apiKey = process.env.GROQ_API_KEY;
   if (!apiKey) {
     throw new AgentModelError("GROQ_API_KEY is not configured in the environment.");
   }
-  const model = process.env.AGENT_GROQ_MODEL || DEFAULT_AGENT_MODEL;
 
   const estimate = estimateRequestTokens(messages);
-  await waitForTokenBudget(estimate, async (waitMs) => {
-    if (onStatus) await onStatus(`Pacing request — waiting ~${Math.ceil(waitMs / 1000)}s to stay under the AI provider's rate limit…`);
-  });
+  await waitForTokenBudget(
+    estimate,
+    async (waitMs) => {
+      if (onStatus) await onStatus(`Pacing request — waiting ~${Math.ceil(waitMs / 1000)}s to stay under the AI provider's rate limit…`);
+    },
+    undefined,
+    stopSignal ? () => stopSignal.aborted : undefined
+  );
+  if (stopSignal?.aborted) throw new AgentModelError("Stopped by user request.");
 
   const reservationId = reserveEstimate(estimate);
   let response: Response;
@@ -119,9 +237,23 @@ export async function callAgentModel(
         tools: AGENT_TOOLS,
         tool_choice: "auto",
         temperature: 0.2,
-        max_tokens: 2000,
+        // write_file's arguments carry a whole file's content as one JSON
+        // string field; 2000 was cutting that off mid-generation for
+        // anything past a small file, which Groq's own tool-call JSON
+        // validation then rejects as "Failed to call a function" — a
+        // deterministic failure that retrying the identical request (see
+        // rate-limit-retry.ts) can never fix, since the model regenerates
+        // the same too-long content and hits the same wall every time.
+        // Kept below TPM_LIMIT_ESTIMATE (token-budget.ts) rather than raised
+        // to cover every possible file, since a single call's completion
+        // competing for most of the whole per-minute budget would just trade
+        // this failure mode for constant 413s.
+        max_tokens: 4096,
       }),
-      signal: AbortSignal.timeout(60_000),
+      // Combined so a user-requested stop (relay.ts's getStopSignal) aborts
+      // an in-flight Groq call exactly like a timeout would, instead of the
+      // orchestrator loop sitting there for up to 60s after Stop was clicked.
+      signal: stopSignal ? AbortSignal.any([AbortSignal.timeout(60_000), stopSignal]) : AbortSignal.timeout(60_000),
     });
   } catch (err) {
     // Never actually reached Groq, so nothing was billed against the window.
@@ -138,7 +270,12 @@ export async function callAgentModel(
       const info = parseRateLimitInfo(bodyText, response.headers.get("retry-after"));
       throw new AgentRateLimitError(info.kind, info.waitSeconds, info.message);
     }
-    throw new AgentModelError(`Agent model request failed (${response.status}): ${bodyText.slice(0, 500)}`);
+    const toolCallFailure = parseToolCallGenerationFailure(bodyText);
+    if (toolCallFailure) {
+      throw new AgentToolCallGenerationError(toolCallFailure.message, toolCallFailure.failedGeneration);
+    }
+    const failure = describeModelFailure(response.status, bodyText, model);
+    throw failure.modelUnavailable ? new AgentModelUnavailableError(failure.message) : new AgentModelError(failure.message);
   }
 
   const data = await response.json();

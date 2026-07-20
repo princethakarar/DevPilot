@@ -468,69 +468,6 @@ export default function LandingSections() {
         </div>
       </div>
 
-      {/* PRICING */}
-      <section id="pricing" className="py-24 px-10 max-w-[1200px] mx-auto">
-        <div className="text-center mb-14">
-          <div className="font-jetbrains text-[11px] tracking-[0.3em] text-[#00b4ff] uppercase mb-4 flex items-center gap-3 justify-center"><span className="opacity-50">{"//"}</span> Pricing</div>
-          <h2 className="text-[clamp(32px,4vw,52px)] font-extrabold leading-tight">Start free.<br/><span className="text-[#00b4ff]">Scale infinitely.</span></h2>
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-[900px] mx-auto justify-center items-stretch">
-          {[
-            { 
-              tier: "Free Trial", 
-              price: "₹0", 
-              period: "/7 days", 
-              desc: "Limited access for testing.", 
-              features: [
-                ["✓","1 Active Project"],
-                ["✓","10k AI Tokens/day"],
-                ["✓","Selected AI Models"]
-              ], 
-              btn: "Start Free Trial", 
-              featured: false 
-            },
-            { 
-              tier: "Pro", 
-              price: "₹199", 
-              period: "/mo", 
-              desc: "For professional developers who move fast and ship often.", 
-              features: [
-                ["✓","Unlimited projects"],
-                ["✓","Unlimited AI tokens"],
-                ["✓","All AI models"],
-                ["✓","Team Collaboration"]
-              ], 
-              btn: "Upgrade to Pro", 
-              featured: true 
-            },
-          ].map((p)=>(
-            <div 
-              key={p.tier} 
-              className={`reveal-item price-card rounded-2xl p-9 relative overflow-hidden transition-all duration-300 flex flex-col justify-between
-                ${p.featured 
-                  ? "landing-featured-card border border-[rgba(0,180,255,0.45)] bg-gradient-to-br from-[rgba(14,48,96,0.75)] to-[rgba(10,20,50,0.98)] shadow-[0_0_50px_rgba(0,180,255,0.15)] hover:shadow-[0_0_60px_rgba(0,180,255,0.3)] md:scale-[1.03] z-10 hover:-translate-y-2.5" 
-                  : "border border-[rgba(0,180,255,0.1)] bg-gradient-to-br from-[rgba(10,31,61,0.7)] to-[rgba(7,20,40,0.9)] hover:-translate-y-1.5 hover:border-[rgba(0,180,255,0.3)]"
-                }`} 
-              style={{ opacity: 0, transform: "translateY(28px)", transition: "opacity 0.55s ease, transform 0.55s ease" }}
-            >
-              <div>
-                {p.featured && <div className="font-jetbrains inline-block bg-[rgba(0,180,255,0.15)] border border-[rgba(0,180,255,0.3)] rounded-sm text-[10px] tracking-[0.15em] text-[#00b4ff] px-2.5 py-0.5 mb-4 uppercase">Most Popular</div>}
-                <div className={`text-[13px] tracking-[0.2em] uppercase mb-3 ${p.featured ? "text-[#00b4ff]" : "text-[#7ca8cc]"}`}>{p.tier}</div>
-                <div className="text-5xl font-extrabold text-white leading-none">{p.price}<span className="text-base font-normal text-[#7ca8cc]">{p.period}</span></div>
-                <div className="font-jetbrains text-[13px] text-[#7ca8cc] leading-relaxed my-3.5">{p.desc}</div>
-                <ul className="list-none flex flex-col gap-2.5 mb-8">
-                  {p.features.map(([ck,txt], idx)=>(
-                    <li key={idx} className="font-jetbrains text-[13px] text-[#e8f4ff] flex items-center gap-2.5">
-                      <span className={`font-bold shrink-0 ${ck === "✓" ? "text-[#00b4ff]" : "text-[#3a6080]"}`}>{ck}</span>{txt}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-              <Link href="/dashboard" className={`font-oxanium block text-center py-3 px-6 rounded-lg text-[13px] font-bold tracking-[0.1em] uppercase no-underline cursor-none transition-all ${p.featured ? "bg-gradient-to-br from-[#1a5faa] to-[#00b4ff] text-white shadow-[0_0_24px_rgba(0,180,255,0.3)] hover:shadow-[0_0_40px_rgba(0,180,255,0.5)]" : "border border-[rgba(255,255,255,0.15)] text-[#e8f4ff] hover:bg-[rgba(255,255,255,0.06)] hover:border-[rgba(255,255,255,0.3)]"}`}>{p.btn}</Link>
-            </div>
-          ))}
-        </div>
-      </section>
 
       {/* CTA */}
       <div className="text-center py-30 px-10 relative overflow-hidden">

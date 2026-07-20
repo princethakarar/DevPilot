@@ -5,8 +5,8 @@ import type { AgentModelMessage } from "./model-client";
  * loop length. Without this, every prior tool result (a full read_file's
  * content, a full command's output) stays in `messages` verbatim forever,
  * and gets resent on every subsequent call — confirmed live to blow past
- * Groq's 6000 TPM budget for qwen/qwen3-32b from a SINGLE large tool result,
- * as early as the second turn of a task.
+ * Groq's ~6000 TPM budget (see token-budget.ts) from a SINGLE large tool
+ * result, as early as the second turn of a task.
  *
  * Once a tool result has been superseded by newer ones, its full content is
  * replaced with a short, tool-aware placeholder — the model can always

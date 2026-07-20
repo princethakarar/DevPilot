@@ -99,6 +99,20 @@ export async function verifyInstall(
       : { success: false, checks, reason: "No dependencies declared and node_modules is empty" };
   }
 
+  // A project with real dependencies but no working node_modules/.bin can't
+  // run any package script that invokes a binary by name — npm resolves
+  // `scripts.dev`/`build`/etc. through .bin first. This is exactly the
+  // failure mode a broken cache restore produces (packages present, shims
+  // missing — see node-modules-persistence.ts), so treat it as a hard
+  // verification failure instead of letting it through silently.
+  if (!checks.binDirExists || !checks.binDirHasEntries) {
+    return {
+      success: false,
+      checks,
+      reason: "node_modules/.bin is missing or empty — package scripts (dev/build/etc.) would fail to resolve their binaries",
+    };
+  }
+
   // Sample instead of checking every dep: read the first 8 (installed first by
   // npm, most likely to be present or missing) and the last 2 (catch truncated
   // installs). This avoids N sequential async VFS reads for large dep sets.
@@ -195,6 +209,13 @@ export async function checkForPartialInstall(
 
     const binExists = await pathExists(instance, "/node_modules/.bin");
     if (!binExists) return true;
+
+    try {
+      const binEntries = await instance.fs.readdir("/node_modules/.bin");
+      if (binEntries.length === 0) return true;
+    } catch {
+      return true;
+    }
 
     return false;
   } catch {

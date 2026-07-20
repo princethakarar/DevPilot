@@ -34,6 +34,7 @@ interface RelayEvent {
   checkpointId?: string | null;
   callId?: string;
   command?: string;
+  timeoutMs?: number;
   path?: string;
   content?: string;
   status?: string;
@@ -142,17 +143,51 @@ export function useAgentRun({ projectId, getInstance, onFileSynced }: UseAgentRu
             await postToolResult(callId, { stdout: "", stderr: "WebContainer is not available in this browser tab.", exitCode: 1 });
             break;
           }
+          // Kill and report a clean timeout a comfortable margin before the
+          // server's own deadline (see relay.ts's requestBrowserCommand) so a
+          // genuinely slow-but-alive command gets a real result instead of
+          // the server giving up first and silently discarding whatever we
+          // post after. The margin needs to cover kill() + draining any
+          // remaining buffered output + the network round trip to
+          // /tool-result, not just network latency — 3s wasn't enough in
+          // practice for a build that was killed right at the wire.
+          const budgetMs = Math.max((event.timeoutMs ?? 45_000) - 15_000, 5000);
           try {
             const parts = (event.command ?? "").trim().split(/\s+/);
             const [cmd, ...args] = parts;
             const proc = await instance.spawn(cmd, args);
+
+            let timedOut = false;
+            const timeoutTimer = setTimeout(() => {
+              timedOut = true;
+              try {
+                proc.kill();
+              } catch {
+                // Best-effort — if kill() itself fails the process is likely already gone.
+              }
+            }, budgetMs);
+
             let output = "";
-            const reader = proc.output.getReader();
-            while (true) {
-              const { done, value } = await reader.read();
-              if (done) break;
-              output += typeof value === "string" ? value : new TextDecoder().decode(value);
+            try {
+              const reader = proc.output.getReader();
+              while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                output += typeof value === "string" ? value : new TextDecoder().decode(value);
+              }
+            } finally {
+              clearTimeout(timeoutTimer);
             }
+
+            if (timedOut) {
+              await postToolResult(callId, {
+                stdout: output,
+                stderr: `Command timed out after ${Math.round(budgetMs / 1000)}s and was killed.`,
+                exitCode: 1,
+              });
+              break;
+            }
+
             const exitCode: number = await proc.exit;
             await postToolResult(callId, { stdout: output, stderr: "", exitCode });
           } catch (err) {
