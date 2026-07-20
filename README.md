@@ -6,7 +6,7 @@
   <img src="https://img.shields.io/badge/TypeScript-5.x-3178C6?style=for-the-badge&logo=typescript&logoColor=white" alt="TypeScript Version" />
   <img src="https://img.shields.io/badge/MongoDB-Native_Driver-47A248?style=for-the-badge&logo=mongodb&logoColor=white" alt="MongoDB" />
   <img src="https://img.shields.io/badge/WebContainers-API-1389FD?style=for-the-badge&logo=stackblitz&logoColor=white" alt="WebContainers" />
-  <img src="https://img.shields.io/badge/Groq_LLM-Qwen3_32B-F3A530?style=for-the-badge&logo=meta&logoColor=white" alt="Groq" />
+  <img src="https://img.shields.io/badge/Groq_LLM-Llama_3.3_70B-F3A530?style=for-the-badge&logo=meta&logoColor=white" alt="Groq" />
   <img src="https://img.shields.io/badge/Mistral-Codestral_FIM-FF7000?style=for-the-badge&logo=mistral&logoColor=white" alt="Mistral" />
   <img src="https://img.shields.io/badge/Monaco-Editor-007ACC?style=for-the-badge&logo=visualstudiocode&logoColor=white" alt="Monaco Editor" />
 </p>
@@ -37,7 +37,7 @@ Click on the tabs below to expand high-fidelity visual representations of the ap
 </details>
 
 <details>
-<summary>🤖 <b>Autonomous AI Coding Agent (Groq + Qwen3-32B)</b></summary>
+<summary>🤖 <b>Autonomous AI Coding Agent (Groq + Llama 3.3 70B)</b></summary>
 
 *The autonomous agent panel embedded in the IDE sidebar. Users describe a task in natural language, and the agent autonomously reads files, searches the codebase, writes changes, runs verification commands (lint/build/test), and creates rollback checkpoints — all with full visibility into every tool call via a real-time streaming log.*
 
@@ -94,7 +94,7 @@ sequenceDiagram
     participant UI as Agent Panel (React)
     participant API as API Route (Next.js)
     participant Orch as Orchestrator (Server)
-    participant LLM as Groq API (Qwen3-32B)
+    participant LLM as Groq API (Llama 3.3 70B)
     participant DB as Database (MongoDB)
     participant WC as WebContainer (Browser)
 
@@ -138,7 +138,7 @@ sequenceDiagram
 
 ### 🤖 AI Autonomous Coding Agent
 *   **Full Agentic Loop**: The agent reads files, searches the codebase, writes changes, runs shell commands (via an allowlist), and verifies results — all autonomously in a tool-calling loop.
-*   **Groq-Powered LLM**: Uses `Qwen3-32B` on Groq's high-speed inference API with intelligent rate-limit handling, token budget management, and context trimming.
+*   **Groq-Powered LLM**: Uses `Llama 3.3 70B Versatile` as the primary model (with `Llama 3.1 8B Instant` as an automatic fallback) on Groq's high-speed inference API, with intelligent rate-limit handling, token budget management, and context trimming.
 *   **Checkpoint Safety Net**: Automatic pre/post-task snapshots stored in MongoDB with TTL expiry. One-click rollback to any checkpoint from the Agent Panel.
 *   **Stall Detection**: Detects repeated failing tool calls and gracefully stops the run with a specific diagnosis rather than burning through the token budget.
 *   **Real-Time Streaming**: Every tool call, result, and status update streams to the UI via Server-Sent Events, giving full transparency into the agent's reasoning.
@@ -156,7 +156,7 @@ sequenceDiagram
 
 ### 📄 Multi-Framework Project Templates
 *   **6 Starter Templates**: React (TypeScript), Next.js, Vue, Angular, Express, and Node.js — each with pre-configured build tooling and sensible defaults.
-*   **Snapshot Caching Pipeline**: Three-tier dependency caching (IndexedDB → CDN → npm fallback) with pre-built `node_modules` snapshots for near-instant project boot.
+*   **Snapshot Caching Pipeline**: Two-tier dependency caching (IndexedDB → npm fallback) with pre-built `node_modules` snapshots for near-instant project boot.
 *   **Boot Reliability Engine**: Smart retry with progressive strategy escalation (`--legacy-peer-deps` → `--force`), install verification, and real-time error classification.
 
 ### 🔐 Authentication & User Management
@@ -193,11 +193,10 @@ The application is a single Next.js 16 deployment with distinct runtime layers c
 
 ## 🛠️ Detailed Technical Deep-Dives
 
-### 🔄 Snapshot Caching Pipeline (3-Tier Dependency Speed System)
+### 🔄 Snapshot Caching Pipeline (2-Tier Dependency Speed System)
 To eliminate the 30–90 second `npm install` cold start on every project load:
 1.  **IndexedDB Cache**: Pre-built `node_modules` tarballs stored as blobs in the browser via `idb-keyval`, keyed by content hash.
-2.  **CDN Snapshots**: Fallback to `https://snapshots.devpilot.app/{template}/{hash}.tar.gz` for cache misses.
-3.  **npm Install**: Final fallback with progressive retry strategies and post-install integrity verification.
+2.  **npm Install**: Fallback with progressive retry strategies and post-install integrity verification.
 
 ### 🛡️ Boot Reliability & Error Recovery
 WebContainer's WASM filesystem has a write-back cache — `npm install` can exit before files are fully flushed. DevPilot mitigates this with:
@@ -259,7 +258,7 @@ DevPilot/
 │   │   ├── agent/                    # Autonomous agent engine
 │   │   │   ├── orchestrator.ts       # Main agent loop (tool-calling, checkpoints)
 │   │   │   ├── tools.ts              # Tool definitions & system prompt
-│   │   │   ├── model-client.ts       # Groq API client (Qwen3-32B)
+│   │   │   ├── model-client.ts       # Groq API client (Llama 3.3 70B + fallback)
 │   │   │   ├── context-tools.ts      # list_files, read_file, search_codebase
 │   │   │   ├── file-tools.ts         # write_file (tree mutation)
 │   │   │   ├── allowlist.ts          # Command validation & security
@@ -300,9 +299,8 @@ DevPilot/
 │   ├── vue/                          # Vue 3 + Vite
 │   ├── angular/                      # Angular CLI
 │   ├── express-simple/               # Express.js API
-│   ├── hono-nodejs-starter/          # Hono framework
 │   ├── node/                         # Vanilla Node.js
-│   └── ... (30+ additional templates)
+│   └── ... (additional templates)
 │
 ├── scripts/                          # Build & maintenance scripts
 │   ├── build-snapshots.ts            # Generate node_modules snapshot tarballs
@@ -389,7 +387,7 @@ Create a `.env` file in the project root containing the following:
 | `MISTRAL_CODESTRAL_MODEL` | Mistral FIM Model | `codestral-latest` |
 
 > [!NOTE]
-> The autonomous AI agent uses `qwen/qwen3-32b` on Groq (hardcoded in the orchestrator) — it reuses the same `GROQ_API_KEY`. The `GROQ_MODEL` variable controls only the AI Chat sidebar.
+> The autonomous AI agent uses `llama-3.3-70b-versatile` as its primary model (with `llama-3.1-8b-instant` as an automatic fallback). Both reuse the same `GROQ_API_KEY`. Override via `AGENT_GROQ_MODEL` and `AGENT_GROQ_FALLBACK_MODEL` env vars. The `GROQ_MODEL` variable controls only the AI Chat sidebar.
 
 > [!TIP]
 > `MISTRAL_API_KEY` is optional. If unset, the inline completion toggle still renders but silently returns empty suggestions — the editor works fine without it.
@@ -441,7 +439,7 @@ npm start
 | :--- | :--- |
 | **WebContainers** over remote VMs | Zero infrastructure cost, instant boot, browser-native — no SSH tunnels, no Docker orchestration, no cloud compute billing. |
 | **MongoDB Native Driver** over Mongoose/Prisma | Direct wire protocol control after migrating from Atlas Data API (which MongoDB deprecated for new accounts). Zod schemas replace Prisma's validation layer. |
-| **Groq (Qwen3-32B)** for the agent | Head-to-head testing showed Qwen3-32B was the only Groq-hosted model that reliably completed the full read → write → verify → mark_complete loop without malformed tool calls. |
+| **Groq (Llama 3.3 70B)** for the agent | Llama 3.3 70B Versatile reliably completes the full read → write → verify → mark_complete tool-calling loop. An automatic fallback to Llama 3.1 8B Instant ensures resilience against model deprecations or rate-limit exhaustion. |
 | **Mistral Codestral** for inline completions | Purpose-built FIM (Fill-in-the-Middle) endpoint — not a chat model repurposed for completion, giving higher quality single-line/multi-line suggestions. |
 | **Server Actions** over REST routes | Next.js 16 server actions reduce boilerplate for CRUD operations while keeping full TypeScript type safety end-to-end. |
 | **Checkpoint system in MongoDB** (not Redis) | Checkpoints are the sole rollback path for an agent that auto-applies every edit. A cache-oriented store (Redis/Upstash) was the wrong durability tier for safety-critical data. |
