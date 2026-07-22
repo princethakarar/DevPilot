@@ -9,8 +9,10 @@ import { checkForPartialInstall } from "@/lib/boot/install-verifier";
 import {
   computePackageJsonHash,
   tryRestoreNodeModules,
+  tryRestoreFromBlob,
   watchForInstallCompletion,
   captureAndStoreNodeModules,
+  uploadNodeModulesToBlob,
 } from "../lib/node-modules-persistence";
 
 function findPackageJsonContent(folder: TemplateFolder): string | null {
@@ -73,6 +75,15 @@ export function useNodeModulesPersistence(
     let cancelled = false;
 
     (async () => {
+      // Unique per effect invocation, threaded through every log line below.
+      // Purely diagnostic: if the "missing .bin" warning is ever seen firing
+      // multiple times in quick succession again, the same id across those
+      // lines means one invocation's logs got duplicated somewhere (e.g. a
+      // dev-mode log-forwarding artifact); different ids means genuinely
+      // concurrent invocations — real evidence either way, not another blind
+      // repro attempt.
+      const invocationId = Math.random().toString(36).slice(2, 8);
+
       try {
         const pkgJson = findPackageJsonContent(templateData);
         if (!pkgJson) return;
@@ -80,28 +91,46 @@ export function useNodeModulesPersistence(
         const pkgHash = await computePackageJsonHash(pkgJson);
         if (cancelled) return;
 
-        let restored = await tryRestoreNodeModules(instance, pkgHash);
+        let restoredFrom: "local" | "blob" | null = null;
+        if (await tryRestoreNodeModules(instance, pkgHash)) {
+          restoredFrom = "local";
+        } else if (await tryRestoreFromBlob(instance, pkgHash)) {
+          // Level 1 miss, Level 2 (Blob CDN) hit — shared cache populated by
+          // some other user's earlier Level 3 install of the same dependency set.
+          restoredFrom = "blob";
+        }
+
+        let restored = restoredFrom !== null;
         if (restored) {
-          // The IndexedDB bundle format can't represent symlinks (see
-          // node-modules-persistence.ts's walkDir), so node_modules/.bin —
-          // which npm populates entirely with symlinks — never makes it into
-          // the cache. A restore that "succeeds" can still leave every
-          // package script (dev/build/etc.) unable to resolve its binary.
-          // Verify before trusting it, and repair with a real install if not.
+          // node-modules-persistence.ts's restoreBundleIntoContainer already
+          // regenerates node_modules/.bin from each package's package.json#bin
+          // field post-restore (the bundle format itself still can't represent
+          // symlinks). This check is what catches it if that regeneration
+          // didn't fully succeed for some reason, and repairs with a real
+          // install rather than serving a broken environment.
           const broken = await checkForPartialInstall(instance);
           if (broken) {
             console.warn(
-              "[DevPilot] Cached node_modules is missing node_modules/.bin — repairing with a real install."
+              `[DevPilot][inv:${invocationId}] Cached node_modules is missing node_modules/.bin — repairing with a real install.`
             );
             restored = false;
           } else {
-            console.info("[DevPilot] Restored node_modules from local cache — no install needed.");
+            console.info(
+              `[DevPilot][inv:${invocationId}] ` +
+                (restoredFrom === "blob"
+                  ? "Restored node_modules from CDN cache (Blob) — no install needed."
+                  : "Restored node_modules from local cache — no install needed.")
+            );
           }
         }
         if (cancelled) return;
 
         cleanupWatch = watchForInstallCompletion(instance, () => {
-          captureAndStoreNodeModules(instance, pkgHash).catch(() => {});
+          captureAndStoreNodeModules(instance, pkgHash)
+            .then((bundle) => {
+              if (bundle) uploadNodeModulesToBlob(pkgHash, bundle);
+            })
+            .catch(() => {});
         });
 
         // Nothing usable cached — either nothing was cached, or a restored

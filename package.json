@@ -14,6 +14,7 @@
     "@base-ui/react": "^1.5.0",
     "@monaco-editor/react": "^4.7.0",
     "@paralleldrive/cuid2": "^3.3.0",
+    "@vercel/blob": "^2.6.1",
     "@webcontainer/api": "^1.6.4",
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/addon-search": "^0.16.0",
