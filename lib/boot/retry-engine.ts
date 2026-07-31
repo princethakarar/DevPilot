@@ -1,3 +1,5 @@
+import { DEFAULT_MAXSOCKETS, OOM_MAXSOCKETS, installFlags } from "./npm-flags";
+
 export type RetryStrategy = "normal" | "legacy-peers" | "force" | "no-optional" | "ignore-scripts";
 
 export interface RetryOptions {
@@ -20,25 +22,31 @@ interface StrategyConfig {
   label: string;
 }
 
+// Socket caps come from lib/boot/npm-flags.ts so this file and the live
+// install path in lib/snapshot/loader.ts can't drift apart. `no-optional` is
+// the strategy selected on OOM/SIGTERM, so it's the one that also drops to the
+// fully-serialised cap — every other strategy is responding to a dependency
+// resolution problem, not memory pressure, and has no reason to give up
+// download concurrency.
 const STRATEGIES: Record<RetryStrategy, StrategyConfig> = {
   normal: {
-    flags: ["--no-audit", "--no-fund", "--prefer-offline", "--no-progress", "--maxsockets=1", "--loglevel=error"],
+    flags: installFlags(["--prefer-offline"], DEFAULT_MAXSOCKETS),
     label: "Normal install",
   },
   "legacy-peers": {
-    flags: ["--no-audit", "--no-fund", "--prefer-offline", "--legacy-peer-deps", "--no-progress", "--maxsockets=1", "--loglevel=error"],
+    flags: installFlags(["--prefer-offline", "--legacy-peer-deps"], DEFAULT_MAXSOCKETS),
     label: "Legacy peer deps mode",
   },
   force: {
-    flags: ["--no-audit", "--no-fund", "--force", "--no-progress", "--maxsockets=1", "--loglevel=error"],
+    flags: installFlags(["--force"], DEFAULT_MAXSOCKETS),
     label: "Force mode",
   },
   "no-optional": {
-    flags: ["--no-audit", "--no-fund", "--prefer-offline", "--no-optional", "--no-progress", "--maxsockets=1", "--loglevel=error"],
+    flags: installFlags(["--prefer-offline", "--no-optional"], OOM_MAXSOCKETS),
     label: "Skipping optional deps",
   },
   "ignore-scripts": {
-    flags: ["--no-audit", "--no-fund", "--prefer-offline", "--ignore-scripts", "--no-progress", "--maxsockets=1", "--loglevel=error"],
+    flags: installFlags(["--prefer-offline", "--ignore-scripts"], DEFAULT_MAXSOCKETS),
     label: "Skipping install scripts",
   },
 };

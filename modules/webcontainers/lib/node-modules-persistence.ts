@@ -1,6 +1,13 @@
 import { get, set, del } from "idb-keyval";
 import type { WebContainer, IFSWatcher, DirEnt } from "@webcontainer/api";
 import { isExpired } from "@/lib/dependency-cache-ttl";
+import {
+  depLog,
+  depWarn,
+  depTimer,
+  formatBytes,
+  mapWithConcurrency,
+} from "@/lib/dep-cache-debug";
 
 /**
  * Regenerates node_modules/.bin (at any depth, including nested per-package
@@ -213,6 +220,21 @@ interface BundleEntry {
   size: number; // 0 for directories
 }
 
+/**
+ * Progress for the phases that are slow enough to look like a hang on a large
+ * tree. Counts are in FILES, not packages: the nextjs starter is 398 packages
+ * but 17,303 files, and every cost in this pipeline scales with the latter, so
+ * reporting packages would show a progress bar that sits still for minutes.
+ */
+export interface DepCacheProgress {
+  phase: "walking" | "reading" | "restoring" | "installing" | "uploading";
+  completed: number;
+  total: number;
+  message: string;
+}
+
+export type DepCacheProgressCallback = (progress: DepCacheProgress) => void;
+
 interface StoredBundle {
   entries: BundleEntry[];
   compressedData: Uint8Array;
@@ -298,7 +320,7 @@ function decodeBundleFromBlob(bytes: Uint8Array): StoredBundle {
   };
 }
 
-export async function computePackageJsonHash(content: string): Promise<string> {
+async function sha256Hex(content: string): Promise<string> {
   const bytes = new TextEncoder().encode(content);
   const digest = await crypto.subtle.digest("SHA-256", bytes);
   return Array.from(new Uint8Array(digest))
@@ -306,69 +328,292 @@ export async function computePackageJsonHash(content: string): Promise<string> {
     .join("");
 }
 
-async function gzip(data: Uint8Array): Promise<{ data: Uint8Array; compressed: boolean }> {
-  if (typeof CompressionStream === "undefined") return { data, compressed: false };
-  try {
-    const stream = new Blob([data as BlobPart]).stream().pipeThrough(new CompressionStream("gzip"));
-    const buf = await new Response(stream).arrayBuffer();
-    return { data: new Uint8Array(buf), compressed: true };
-  } catch {
-    return { data, compressed: false };
-  }
+export async function computePackageJsonHash(content: string): Promise<string> {
+  return sha256Hex(content);
 }
 
-async function gunzip(data: Uint8Array, compressed: boolean): Promise<Uint8Array> {
-  if (!compressed || typeof DecompressionStream === "undefined") return data;
-  const stream = new Blob([data as BlobPart]).stream().pipeThrough(new DecompressionStream("gzip"));
-  const buf = await new Response(stream).arrayBuffer();
-  return new Uint8Array(buf);
+/**
+ * The dependency-cache key, for every tier (IndexedDB, Blob, warm-cache script).
+ *
+ * Now that templates ship their package-lock.json (see path-to-json.ts), the
+ * lockfile is folded into the key. That's what makes cross-machine hits
+ * genuinely safe: `package.json` alone says `react: ^18.0.0`, which resolved
+ * to different exact versions in March and in July, so two machines could
+ * legitimately compute the same key for materially different trees. The
+ * lockfile pins the exact resolved version of every transitive dependency, so
+ * matching keys now imply matching trees.
+ *
+ * Templates with no lockfile fall back to package.json only — same key as
+ * before, and the 7-day TTL in lib/dependency-cache-ttl.ts remains the only
+ * bound on staleness for those.
+ *
+ * IMPORTANT: this must be computed from the TEMPLATE's files, not the
+ * container's, and the same way in every caller. npm rewrites
+ * package-lock.json in place during an install (normalising it, filling in
+ * integrity fields), so hashing the post-install lockfile would store every
+ * bundle under a key that no lookup ever computes — a cache that writes
+ * perfectly and never reads.
+ */
+export async function computeDependencyCacheKey(
+  packageJson: string,
+  packageLockJson: string | null
+): Promise<string> {
+  if (!packageLockJson) return sha256Hex(packageJson);
+  return sha256Hex(`${packageJson}\n--devpilot-lock--\n${packageLockJson}`);
 }
 
-function concat(chunks: Uint8Array[], totalSize: number): Uint8Array {
-  const result = new Uint8Array(totalSize);
-  let offset = 0;
-  for (const c of chunks) {
-    result.set(c, offset);
-    offset += c.byteLength;
-  }
-  return result;
-}
+// Concurrency caps for the WebContainer virtual filesystem. Deliberately
+// SEPARATE from npm's --maxsockets (lib/snapshot/loader.ts): that one bounds
+// outbound network sockets and is tuned against sandbox OOM kills, whereas
+// these bound in-flight WASM VFS syscalls and hold file contents in JS memory
+// while in flight. Conflating them would mean an OOM-driven drop to
+// maxsockets=1 also crippling local file I/O, which has nothing to do with
+// the network pressure that triggered it.
+//
+// Reads are capped lower than writes because a read materialises the file's
+// full contents in the heap and holds it until the batch drains; a write hands
+// its buffer straight to the VFS.
+const VFS_READ_CONCURRENCY = 12;
+const VFS_WRITE_CONCURRENCY = 16;
 
-async function walkDir(
-  instance: WebContainer,
-  dir: string,
-  base: string,
-  entries: BundleEntry[],
-  chunks: Uint8Array[]
-): Promise<void> {
-  let items: DirEnt<string>[];
-  try {
-    items = await instance.fs.readdir(dir, { withFileTypes: true });
-  } catch {
-    return;
-  }
+/**
+ * Pulls exactly-N-byte slices out of a byte stream.
+ *
+ * Restore needs this because the bundle payload is a headerless concatenation:
+ * entry sizes in the header say how many bytes belong to each file, so the
+ * consumer has to cut the decompressed stream at arbitrary offsets that don't
+ * line up with the decompressor's own chunk boundaries. Reading incrementally
+ * is the entire point — the previous implementation decompressed the whole
+ * tree into one contiguous Uint8Array first (~279MB for nextjs) before writing
+ * a single file.
+ */
+class ByteStreamReader {
+  private pending: Uint8Array[] = [];
+  private buffered = 0;
+  private exhausted = false;
 
-  if (items.length === 0) {
-    if (base) entries.push({ path: base, isDir: true, size: 0 });
-    return;
-  }
+  constructor(private readonly reader: ReadableStreamDefaultReader<Uint8Array>) {}
 
-  for (const item of items) {
-    const rel = base ? `${base}/${item.name}` : item.name;
-    const full = `${dir}/${item.name}`;
+  async read(n: number): Promise<Uint8Array> {
+    if (n === 0) return new Uint8Array(0);
 
-    if (item.isDirectory?.()) {
-      await walkDir(instance, full, rel, entries, chunks);
-    } else if (item.isFile?.()) {
-      try {
-        const data = (await instance.fs.readFile(full)) as Uint8Array;
-        entries.push({ path: rel, isDir: false, size: data.byteLength });
-        chunks.push(data);
-      } catch {
-        // unreadable entry (broken symlink, etc.) — skip it, not fatal
+    while (this.buffered < n && !this.exhausted) {
+      const { done, value } = await this.reader.read();
+      if (done) {
+        this.exhausted = true;
+        break;
+      }
+      if (value && value.byteLength > 0) {
+        this.pending.push(value);
+        this.buffered += value.byteLength;
       }
     }
+
+    const take = Math.min(n, this.buffered);
+    const out = new Uint8Array(take);
+    let written = 0;
+
+    while (written < take) {
+      const head = this.pending[0];
+      const need = take - written;
+
+      if (head.byteLength <= need) {
+        out.set(head, written);
+        written += head.byteLength;
+        this.pending.shift();
+      } else {
+        out.set(head.subarray(0, need), written);
+        this.pending[0] = head.subarray(need);
+        written += need;
+      }
+    }
+
+    this.buffered -= take;
+    return out;
   }
+
+  async cancel(): Promise<void> {
+    try {
+      await this.reader.cancel();
+    } catch {
+      // already closed/errored — nothing to release
+    }
+  }
+}
+
+function openBundlePayload(bundle: StoredBundle): ByteStreamReader {
+  const source = new Blob([bundle.compressedData as BlobPart]).stream();
+  const bytes =
+    bundle.compressed && typeof DecompressionStream !== "undefined"
+      ? source.pipeThrough(new DecompressionStream("gzip"))
+      : source;
+  return new ByteStreamReader(bytes.getReader() as ReadableStreamDefaultReader<Uint8Array>);
+}
+
+interface WalkedTree {
+  /** Paths relative to node_modules/, in the order their bytes appear in the payload. */
+  filePaths: string[];
+  /** Directories that contain nothing — the only dirs the bundle must record explicitly. */
+  emptyDirs: string[];
+}
+
+/**
+ * Enumerates the tree WITHOUT reading any file contents.
+ *
+ * Split from the read phase so the read phase can stream: knowing every path
+ * up front is what lets capture feed the compressor incrementally instead of
+ * buffering every file to compute a total size first. (WebContainer's fs has
+ * no stat(), so sizes still can't be known until each file is actually read —
+ * they're recorded during streaming instead, see captureBundle.)
+ *
+ * Directory listings run concurrently level-by-level; a deep nested
+ * node_modules is wide but shallow, so BFS parallelism helps a lot here.
+ */
+async function walkTree(instance: WebContainer, root: string): Promise<WalkedTree> {
+  const filePaths: string[] = [];
+  const emptyDirs: string[] = [];
+
+  let frontier: { dir: string; base: string }[] = [{ dir: root, base: "" }];
+
+  while (frontier.length > 0) {
+    const listings = await mapWithConcurrency(frontier, VFS_READ_CONCURRENCY, async (node) => {
+      let items: DirEnt<string>[];
+      try {
+        items = await instance.fs.readdir(node.dir, { withFileTypes: true });
+      } catch {
+        return { node, items: [] as DirEnt<string>[], unreadable: true };
+      }
+      return { node, items, unreadable: false };
+    });
+
+    const next: { dir: string; base: string }[] = [];
+
+    for (const { node, items, unreadable } of listings) {
+      if (unreadable) continue;
+
+      if (items.length === 0) {
+        if (node.base) emptyDirs.push(node.base);
+        continue;
+      }
+
+      for (const item of items) {
+        const rel = node.base ? `${node.base}/${item.name}` : item.name;
+        const full = `${node.dir}/${item.name}`;
+
+        if (item.isDirectory?.()) {
+          next.push({ dir: full, base: rel });
+        } else if (item.isFile?.()) {
+          filePaths.push(rel);
+        }
+        // Anything else (symlinks — notably node_modules/.bin/*) is skipped:
+        // the bundle format can't represent them. regenerateBinLinks rebuilds
+        // .bin from each package's package.json#bin after a restore.
+      }
+    }
+
+    frontier = next;
+  }
+
+  return { filePaths, emptyDirs };
+}
+
+/**
+ * Reads every file and streams it straight into gzip, never holding the whole
+ * uncompressed tree in memory.
+ *
+ * This replaces a build-an-array-of-every-file-then-concat()-then-gzip()
+ * pipeline whose peak allocation was ~2x the raw tree — about 560MB for the
+ * nextjs starter (17,303 files / 279MB), which is the most likely reason the
+ * Blob tier was never getting populated for Next.js at all: the tab would be
+ * pushed to (or over) its heap limit right at capture time, so the upload that
+ * every later cache hit depends on simply never happened.
+ *
+ * Entry sizes are recorded here rather than up front because WebContainer's fs
+ * exposes no stat() — the size of a file isn't knowable until it's read. That
+ * forces one ordering constraint: `entries` must be appended in exactly the
+ * order bytes are enqueued, since restore replays them positionally.
+ */
+async function captureBundle(
+  instance: WebContainer,
+  tree: WalkedTree,
+  onProgress?: DepCacheProgressCallback
+): Promise<{ entries: BundleEntry[]; compressedData: Uint8Array; compressed: boolean; rawSize: number }> {
+  const entries: BundleEntry[] = tree.emptyDirs.map((path) => ({ path, isDir: true, size: 0 }));
+
+  // Decided BEFORE the stream is consumed, never mid-flight: a ReadableStream
+  // can't be replayed, so a compressor that fails halfway leaves `entries`
+  // half-populated with no way to retry. Better to fail the capture outright
+  // than to persist a bundle whose header disagrees with its payload.
+  const useCompression = typeof CompressionStream !== "undefined";
+  if (!useCompression) {
+    depWarn("CompressionStream unavailable — capturing uncompressed (larger cache entry).");
+  }
+
+  let rawSize = 0;
+  let filesRead = 0;
+  let cursor = 0;
+
+  const source = new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      if (cursor >= tree.filePaths.length) {
+        controller.close();
+        return;
+      }
+
+      const batch = tree.filePaths.slice(cursor, cursor + VFS_READ_CONCURRENCY);
+      cursor += batch.length;
+
+      const datas = await Promise.all(
+        batch.map(async (rel) => {
+          try {
+            return (await instance.fs.readFile(`node_modules/${rel}`)) as Uint8Array;
+          } catch {
+            // Unreadable entry (broken symlink, race with a concurrent write).
+            // Omitted from BOTH header and payload so the two stay in sync.
+            return null;
+          }
+        })
+      );
+
+      for (let i = 0; i < batch.length; i++) {
+        const data = datas[i];
+        if (!data) continue;
+        entries.push({ path: batch[i], isDir: false, size: data.byteLength });
+        rawSize += data.byteLength;
+        filesRead++;
+        controller.enqueue(data);
+      }
+
+      onProgress?.({
+        phase: "reading",
+        completed: cursor,
+        total: tree.filePaths.length,
+        message: `Packaging dependencies — ${cursor}/${tree.filePaths.length} files`,
+      });
+    },
+  });
+
+  // CompressionStream's lib.dom typing declares its writable side as
+  // WritableStream<BufferSource>, which isn't assignable from
+  // ReadableStream<Uint8Array> under strict variance even though every value
+  // we enqueue is a valid BufferSource. Cast the transform, not the data.
+  const piped = useCompression
+    ? source.pipeThrough(
+        new CompressionStream("gzip") as unknown as ReadableWritablePair<Uint8Array, Uint8Array>
+      )
+    : source;
+
+  const compressedData = new Uint8Array(await new Response(piped).arrayBuffer());
+
+  depLog("capture: packaged tree", {
+    files: filesRead,
+    emptyDirs: tree.emptyDirs.length,
+    raw: formatBytes(rawSize),
+    stored: formatBytes(compressedData.byteLength),
+    ratio: rawSize > 0 ? `${((compressedData.byteLength / rawSize) * 100).toFixed(1)}%` : "n/a",
+  });
+
+  return { entries, compressedData, compressed: useCompression, rawSize };
 }
 
 async function getManifest(): Promise<ManifestEntry[]> {
@@ -441,25 +686,79 @@ async function storeNodeModulesBundle(
 
 async function restoreBundleIntoContainer(
   instance: WebContainer,
-  cached: StoredBundle
+  cached: StoredBundle,
+  onProgress?: DepCacheProgressCallback
 ): Promise<void> {
-  const raw = await gunzip(cached.compressedData, cached.compressed);
-  let offset = 0;
+  const done = depTimer("restore: write tree into container");
+  const payload = openBundlePayload(cached);
 
-  for (const entry of cached.entries) {
-    const targetPath = `node_modules/${entry.path}`;
-
-    if (entry.isDir) {
-      await instance.fs.mkdir(targetPath, { recursive: true }).catch(() => {});
-      continue;
+  try {
+    // Phase 1 — every directory, deduped, up front.
+    //
+    // The old loop issued a recursive mkdir for each file's parent, i.e. one
+    // per file (~17k for nextjs) where the tree only has a few thousand
+    // distinct directories. Deduping first turns almost all of those into
+    // nothing, and lets the survivors run concurrently.
+    const dirs = new Set<string>();
+    for (const entry of cached.entries) {
+      if (entry.isDir) {
+        dirs.add(`node_modules/${entry.path}`);
+        continue;
+      }
+      const parent = `node_modules/${entry.path}`.split("/").slice(0, -1).join("/");
+      if (parent) dirs.add(parent);
     }
 
-    const bytes = raw.subarray(offset, offset + entry.size);
-    offset += entry.size;
+    await mapWithConcurrency([...dirs], VFS_WRITE_CONCURRENCY, async (dir) => {
+      await instance.fs.mkdir(dir, { recursive: true }).catch(() => {});
+    });
 
-    const parentDir = targetPath.split("/").slice(0, -1).join("/");
-    if (parentDir) await instance.fs.mkdir(parentDir, { recursive: true }).catch(() => {});
-    await instance.fs.writeFile(targetPath, bytes);
+    depLog("restore: created directories", { count: dirs.size });
+
+    // Phase 2 — file contents.
+    //
+    // Bytes must be pulled from the payload strictly in entry order (it's a
+    // single concatenated stream), but the WRITES don't have to be serialised
+    // the way they were before. So: read a batch's worth sequentially from the
+    // decompressor (cheap, in-memory), then issue that batch's writes
+    // concurrently against the VFS (expensive). ~34k sequential awaits becomes
+    // ~17k stream reads plus ~1.1k parallel write batches.
+    const fileEntries = cached.entries.filter((e) => !e.isDir);
+    let written = 0;
+
+    for (let i = 0; i < fileEntries.length; i += VFS_WRITE_CONCURRENCY) {
+      const batch = fileEntries.slice(i, i + VFS_WRITE_CONCURRENCY);
+
+      const withBytes: { path: string; bytes: Uint8Array }[] = [];
+      for (const entry of batch) {
+        const bytes = await payload.read(entry.size);
+        if (bytes.byteLength !== entry.size) {
+          // Header and payload disagree — a truncated or corrupt bundle. Bail
+          // instead of writing half a dependency tree that would then fail
+          // checkForPartialInstall in a much more confusing way.
+          throw new Error(
+            `Bundle payload truncated at ${entry.path}: expected ${entry.size} bytes, got ${bytes.byteLength}`
+          );
+        }
+        withBytes.push({ path: `node_modules/${entry.path}`, bytes });
+      }
+
+      await Promise.all(
+        withBytes.map(({ path, bytes }) => instance.fs.writeFile(path, bytes))
+      );
+
+      written += batch.length;
+      onProgress?.({
+        phase: "restoring",
+        completed: written,
+        total: fileEntries.length,
+        message: `Restoring cached dependencies — ${written}/${fileEntries.length} files`,
+      });
+    }
+
+    done({ files: written, dirs: dirs.size });
+  } finally {
+    await payload.cancel();
   }
 
   // Awaited here, inside restoreBundleIntoContainer itself — not fired off
@@ -468,7 +767,9 @@ async function restoreBundleIntoContainer(
   // caller's subsequent checkForPartialInstall call can then never race
   // ahead of this: by construction there is no in-flight state left for it
   // to observe partway through.
-  await regenerateBinLinks(instance);
+  const binsDone = depTimer("restore: regenerate .bin symlinks");
+  const regenerated = await regenerateBinLinks(instance);
+  binsDone({ regenerated });
 }
 
 /**
@@ -480,16 +781,27 @@ async function restoreBundleIntoContainer(
  */
 export async function tryRestoreNodeModules(
   instance: WebContainer,
-  pkgHash: string
+  pkgHash: string,
+  onProgress?: DepCacheProgressCallback
 ): Promise<boolean> {
   const cached = await getCachedNodeModules(pkgHash);
-  if (!cached) return false;
+  if (!cached) {
+    depLog("L1 IndexedDB: miss", { pkgHash: pkgHash.slice(0, 12) });
+    return false;
+  }
+
+  depLog("L1 IndexedDB: hit", {
+    pkgHash: pkgHash.slice(0, 12),
+    stored: formatBytes(cached.compressedData.byteLength),
+    files: cached.entries.length,
+    ageHours: ((Date.now() - cached.cachedAt) / 3_600_000).toFixed(1),
+  });
 
   try {
-    await restoreBundleIntoContainer(instance, cached);
+    await restoreBundleIntoContainer(instance, cached, onProgress);
     return true;
   } catch (err) {
-    console.warn("[DevPilot] Failed to restore cached node_modules — falling back to a fresh install:", err);
+    depWarn("L1 restore failed — falling back to a fresh install:", err);
     return false;
   }
 }
@@ -506,24 +818,56 @@ export async function tryRestoreNodeModules(
  */
 export async function tryRestoreFromBlob(
   instance: WebContainer,
-  pkgHash: string
+  pkgHash: string,
+  onProgress?: DepCacheProgressCallback
 ): Promise<boolean> {
-  if (!BLOB_BASE_URL) return false;
+  if (!BLOB_BASE_URL) {
+    depWarn("L2 Blob: NEXT_PUBLIC_BLOB_BASE_URL is unset — CDN cache tier is disabled entirely.");
+    return false;
+  }
+
+  const url = `${BLOB_BASE_URL}/${blobPathname(pkgHash)}`;
 
   try {
-    const res = await fetch(`${BLOB_BASE_URL}/${blobPathname(pkgHash)}`);
-    if (!res.ok) return false;
+    const fetchDone = depTimer("L2 Blob: download");
+    const res = await fetch(url);
 
-    const bundle = decodeBundleFromBlob(new Uint8Array(await res.arrayBuffer()));
-    if (isExpired(bundle.cachedAt)) return false;
+    if (!res.ok) {
+      // 404 is the ordinary cold-cache case and stays quiet at info level;
+      // anything else means the tier is misconfigured or erroring, which
+      // previously looked identical to a plain miss from the outside.
+      if (res.status === 404) {
+        depLog("L2 Blob: miss (404)", { pkgHash: pkgHash.slice(0, 12) });
+      } else {
+        depWarn(`L2 Blob: unexpected status ${res.status} — treating as miss.`, { url });
+      }
+      return false;
+    }
 
-    await restoreBundleIntoContainer(instance, bundle);
+    const raw = new Uint8Array(await res.arrayBuffer());
+    fetchDone({ bytes: formatBytes(raw.byteLength) });
+
+    const bundle = decodeBundleFromBlob(raw);
+    if (isExpired(bundle.cachedAt)) {
+      depLog("L2 Blob: hit but expired — falling through to npm", {
+        ageHours: ((Date.now() - bundle.cachedAt) / 3_600_000).toFixed(1),
+      });
+      return false;
+    }
+
+    depLog("L2 Blob: hit", {
+      pkgHash: pkgHash.slice(0, 12),
+      files: bundle.entries.length,
+      stored: formatBytes(bundle.compressedData.byteLength),
+    });
+
+    await restoreBundleIntoContainer(instance, bundle, onProgress);
 
     storeNodeModulesBundle(pkgHash, bundle).catch(() => {});
 
     return true;
   } catch (err) {
-    console.warn("[DevPilot] Blob cache read failed, falling back:", err);
+    depWarn("L2 Blob read failed, falling back:", err);
     return false;
   }
 }
@@ -536,9 +880,47 @@ export async function tryRestoreFromBlob(
  * Returns the captured bundle (rather than just a bool) so a Level 2 upload
  * can reuse the already-walked/gzipped bytes instead of re-walking the tree.
  */
+/**
+ * Guards against two captures of the same tree running at once.
+ *
+ * The trigger is an fs.watch debounce, and a single boot can legitimately
+ * write node_modules more than once — the OOM fallback's serialised retry does
+ * exactly that, and was observed starting a second capture 12s into the first.
+ * Two concurrent walk+gzip passes over a 400MB tree double both the memory
+ * and the CPU cost for a bundle that is identical either way.
+ */
+const capturesInFlight = new Set<string>();
+
 export async function captureAndStoreNodeModules(
   instance: WebContainer,
-  pkgHash: string
+  pkgHash: string,
+  expectedPackageJson: string,
+  onProgress?: DepCacheProgressCallback
+): Promise<StoredBundle | null> {
+  // Claimed synchronously, before the first await. Checking here but adding
+  // after the readFile below would let two callers in the same tick both pass
+  // the check and both proceed — which is precisely the interleaving the
+  // fs.watch debounce produces.
+  if (capturesInFlight.has(pkgHash)) {
+    depLog("capture: skipped — one is already in flight for this key", {
+      pkgHash: pkgHash.slice(0, 12),
+    });
+    return null;
+  }
+  capturesInFlight.add(pkgHash);
+
+  try {
+    return await captureAndStoreInner(instance, pkgHash, expectedPackageJson, onProgress);
+  } finally {
+    capturesInFlight.delete(pkgHash);
+  }
+}
+
+async function captureAndStoreInner(
+  instance: WebContainer,
+  pkgHash: string,
+  expectedPackageJson: string,
+  onProgress?: DepCacheProgressCallback
 ): Promise<StoredBundle | null> {
   try {
     await instance.fs.readFile("node_modules/.package-lock.json", "utf-8");
@@ -546,26 +928,68 @@ export async function captureAndStoreNodeModules(
     return null;
   }
 
-  const entries: BundleEntry[] = [];
-  const chunks: Uint8Array[] = [];
-  await walkDir(instance, "node_modules", "", entries, chunks);
-  if (entries.length === 0) return null;
+  // Guard against caching a tree that no longer matches its key.
+  //
+  // The capture is triggered by an fs.watch debounce on node_modules, which
+  // also fires when the user runs `npm install <something>` in the terminal.
+  // Without this check that install's extra packages would be captured and
+  // published under the ORIGINAL template's key — silently handing every
+  // future user of that template a tree containing packages they never asked
+  // for. pkgHash is derived from the template's files and can't be recomputed
+  // from the container (npm rewrites the lockfile during install), so compare
+  // the one file npm does leave alone: package.json itself.
+  try {
+    const live = await instance.fs.readFile("/package.json", "utf-8");
+    if (live.trim() !== expectedPackageJson.trim()) {
+      depLog("capture: skipped — package.json changed since boot, key no longer describes this tree", {
+        pkgHash: pkgHash.slice(0, 12),
+      });
+      return null;
+    }
+  } catch {
+    depWarn("capture: skipped — could not read /package.json to verify the cache key still applies.");
+    return null;
+  }
 
-  const totalSize = chunks.reduce((acc, c) => acc + c.byteLength, 0);
-  const raw = concat(chunks, totalSize);
-  const { data: compressedData, compressed } = await gzip(raw);
+  {
+    const overall = depTimer("capture: total");
 
-  const bundle: StoredBundle = {
-    entries,
-    compressedData,
-    compressed,
-    rawSize: totalSize,
-    cachedAt: Date.now(),
-  };
+    const walkDone = depTimer("capture: walk tree");
+    onProgress?.({
+      phase: "walking",
+      completed: 0,
+      total: 0,
+      message: "Scanning installed dependencies…",
+    });
+    const tree = await walkTree(instance, "node_modules");
+    walkDone({ files: tree.filePaths.length, emptyDirs: tree.emptyDirs.length });
 
-  await storeNodeModulesBundle(pkgHash, bundle);
+    if (tree.filePaths.length === 0 && tree.emptyDirs.length === 0) return null;
 
-  return bundle;
+    const packDone = depTimer("capture: read + gzip");
+    const { entries, compressedData, compressed, rawSize } = await captureBundle(
+      instance,
+      tree,
+      onProgress
+    );
+    packDone();
+
+    const bundle: StoredBundle = {
+      entries,
+      compressedData,
+      compressed,
+      rawSize,
+      cachedAt: Date.now(),
+    };
+
+    const storeDone = depTimer("capture: write to IndexedDB");
+    await storeNodeModulesBundle(pkgHash, bundle);
+    storeDone();
+
+    overall({ pkgHash: pkgHash.slice(0, 12), stored: formatBytes(compressedData.byteLength) });
+
+    return bundle;
+  }
 }
 
 /**
@@ -580,27 +1004,170 @@ export async function captureAndStoreNodeModules(
  * Never throws: a failed upload must not affect the install that already
  * succeeded.
  */
-export async function uploadNodeModulesToBlob(
-  pkgHash: string,
-  bundle: StoredBundle
-): Promise<void> {
-  if (!BLOB_BASE_URL) return;
+const BLOB_UPLOAD_MAX_ATTEMPTS = 3;
+const BLOB_UPLOAD_BASE_DELAY_MS = 2_000;
+
+/**
+ * Errors that mean "this upload will never succeed, stop trying".
+ *
+ * Note what is NOT reliably catchable here: the route's own write-gate
+ * rejection. @vercel/blob's client swallows the server's response body and
+ * surfaces every token-minting failure as the same opaque "Failed to retrieve
+ * the client token", so a legitimate "an entry already exists and is fresh"
+ * is indistinguishable from a transient network failure at this layer. That's
+ * why alreadyCachedInBlob() below checks BEFORE uploading rather than relying
+ * on classifying the failure after the fact — observed burning all three
+ * attempts on a permanently-rejected write.
+ */
+function isPermanentUploadFailure(err: unknown): boolean {
+  const message = err instanceof Error ? err.message : String(err);
+  return (
+    message.includes("Write rejected") ||
+    message.includes("Not authenticated") ||
+    message.includes("Invalid dependency cache pathname") ||
+    message.includes("maximumSizeInBytes")
+  );
+}
+
+/**
+ * True when a fresh entry already sits at this key, making an upload both
+ * pointless and guaranteed to be rejected by the route. Mirrors the route's
+ * own freshness gate, but client-side and before spending a 100MB+ POST on it.
+ *
+ * Fails OPEN (returns false) on any uncertainty: if this can't tell, the
+ * upload should still be attempted — the route re-checks authoritatively and
+ * is the thing actually protecting the live entry.
+ */
+async function alreadyCachedInBlob(pkgHash: string): Promise<boolean> {
+  if (!BLOB_BASE_URL) return false;
 
   try {
-    const { upload } = await import("@vercel/blob/client");
-    const payload = encodeBundleForBlob(bundle);
+    const url = `${BLOB_BASE_URL}/${blobPathname(pkgHash)}`;
+    const lenRes = await fetch(url, { headers: { Range: "bytes=0-3" } });
+    if (lenRes.status === 404) return false;
+    if (lenRes.status !== 200 && lenRes.status !== 206) return false;
 
-    await upload(blobPathname(pkgHash), new Blob([payload as BlobPart]), {
-      access: "public",
-      handleUploadUrl: "/api/dependency-cache/blob-upload",
-      contentType: "application/octet-stream",
-      multipart: true,
-    });
+    const lenBytes = new Uint8Array(await lenRes.arrayBuffer());
+    if (lenBytes.byteLength < 4) return false;
+    const headerLen = new DataView(lenBytes.buffer, lenBytes.byteOffset, 4).getUint32(0, true);
+    if (headerLen <= 0 || headerLen > 20 * 1024 * 1024) return false;
 
-    console.info("[DevPilot] Cached node_modules to CDN (Blob) for future installs.");
-  } catch (err) {
-    console.warn("[DevPilot] Failed to upload node_modules to Blob cache (non-fatal):", err);
+    // Range reads against a freshly-written object can come back short; keep
+    // asking for the remainder rather than treating a partial header as
+    // corrupt. (This one fails open on give-up, unlike the route's gate.)
+    const chunks: Uint8Array[] = [];
+    let received = 0;
+    for (let attempt = 0; attempt < 5 && received < headerLen; attempt++) {
+      const headerRes = await fetch(url, {
+        headers: { Range: `bytes=${4 + received}-${3 + headerLen}` },
+      });
+      if (headerRes.status !== 200 && headerRes.status !== 206) return false;
+      const chunk = new Uint8Array(await headerRes.arrayBuffer());
+      if (chunk.byteLength === 0) break;
+      chunks.push(chunk);
+      received += chunk.byteLength;
+    }
+    if (received < headerLen) return false;
+
+    const headerBytes = new Uint8Array(received);
+    let offset = 0;
+    for (const chunk of chunks) {
+      headerBytes.set(chunk, offset);
+      offset += chunk.byteLength;
+    }
+
+    const header = JSON.parse(new TextDecoder().decode(headerBytes.subarray(0, headerLen)));
+    if (typeof header.cachedAt !== "number") return false;
+
+    return !isExpired(header.cachedAt);
+  } catch {
+    return false;
   }
+}
+
+export async function uploadNodeModulesToBlob(
+  pkgHash: string,
+  bundle: StoredBundle,
+  onProgress?: DepCacheProgressCallback
+): Promise<boolean> {
+  if (!BLOB_BASE_URL) {
+    depWarn("L2 Blob upload skipped — NEXT_PUBLIC_BLOB_BASE_URL is unset.");
+    return false;
+  }
+
+  const payload = encodeBundleForBlob(bundle);
+
+  // The route's own cap. Checked here so an oversized tree fails with a clear
+  // reason in the console instead of a generic 400 from token minting.
+  const MAX_UPLOAD_BYTES = 300 * 1024 * 1024;
+  if (payload.byteLength > MAX_UPLOAD_BYTES) {
+    depWarn(
+      `L2 Blob upload skipped — bundle is ${formatBytes(payload.byteLength)}, over the ` +
+        `${formatBytes(MAX_UPLOAD_BYTES)} route limit. This dependency set will never be CDN-cached.`,
+      { pkgHash: pkgHash.slice(0, 12) }
+    );
+    return false;
+  }
+
+  if (await alreadyCachedInBlob(pkgHash)) {
+    depLog("L2 Blob upload skipped — a fresh entry already exists at this key", {
+      pkgHash: pkgHash.slice(0, 12),
+    });
+    return false;
+  }
+
+  for (let attempt = 1; attempt <= BLOB_UPLOAD_MAX_ATTEMPTS; attempt++) {
+    try {
+      const done = depTimer(`L2 Blob upload (attempt ${attempt}/${BLOB_UPLOAD_MAX_ATTEMPTS})`);
+
+      onProgress?.({
+        phase: "uploading",
+        completed: 0,
+        total: 1,
+        message: `Sharing cached dependencies (${formatBytes(payload.byteLength)})…`,
+      });
+
+      const { upload } = await import("@vercel/blob/client");
+
+      await upload(blobPathname(pkgHash), new Blob([payload as BlobPart]), {
+        access: "public",
+        handleUploadUrl: "/api/dependency-cache/blob-upload",
+        contentType: "application/octet-stream",
+        multipart: true,
+      });
+
+      done({ bytes: formatBytes(payload.byteLength) });
+      console.info(
+        `[DevPilot] Cached node_modules to CDN (Blob) for future installs — ` +
+          `${formatBytes(payload.byteLength)}, key ${blobPathname(pkgHash)}`
+      );
+      return true;
+    } catch (err) {
+      if (isPermanentUploadFailure(err)) {
+        // Not a warning: "an entry already exists and is still fresh" is the
+        // normal steady state once a template has been cached once.
+        depLog("L2 Blob upload declined by write-gate (expected when a fresh entry exists)", {
+          reason: err instanceof Error ? err.message : String(err),
+        });
+        return false;
+      }
+
+      if (attempt === BLOB_UPLOAD_MAX_ATTEMPTS) {
+        depWarn(
+          `L2 Blob upload failed after ${BLOB_UPLOAD_MAX_ATTEMPTS} attempts — this dependency set ` +
+            `stays npm-only for other users until someone else's install succeeds:`,
+          err
+        );
+        return false;
+      }
+
+      const delay = BLOB_UPLOAD_BASE_DELAY_MS * Math.pow(2, attempt - 1);
+      depWarn(`L2 Blob upload attempt ${attempt} failed, retrying in ${delay}ms:`, err);
+      await new Promise((r) => setTimeout(r, delay));
+    }
+  }
+
+  return false;
 }
 
 /**

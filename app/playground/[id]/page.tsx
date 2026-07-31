@@ -35,6 +35,7 @@ import { SourceControlPanel } from "@/modules/playground/components/source-contr
 import { AgentPanel } from "@/modules/playground/components/agent-panel";
 import { useSourceControl } from "@/modules/playground/hooks/useSourceControl";
 import { useNodeModulesPersistence } from "@/modules/webcontainers/hooks/useNodeModulesPersistence";
+import { npmrcContents, DEFAULT_MAXSOCKETS } from "@/lib/boot/npm-flags";
 import { useIdeLayout } from "@/modules/webcontainers/hooks/useIdeLayout";
 import { useParams } from "next/navigation";
 import React, {
@@ -126,18 +127,18 @@ const MainPlaygroundPage = () => {
       instance.mount(files).then(async () => {
         console.log("Initial files mounted to WebContainer");
 
-        // Speed up whatever `npm install` the user runs in the terminal: skip
-        // the audit/funding network round-trips and progress-bar I/O, without
-        // touching concurrency (that's tuned for stability elsewhere, not
-        // speed — see AGENTS.md's Boot Reliability System notes on maxsockets).
-        // Only written if the project doesn't already ship its own .npmrc.
+        // Speed up whatever `npm install` the user runs in the terminal, using
+        // the same socket policy the automatic install path uses (see
+        // lib/boot/npm-flags.ts) rather than a second, subtly different set of
+        // settings. Only written if the project doesn't already ship its own
+        // .npmrc.
         try {
           await instance.fs.readFile("/.npmrc", "utf-8");
         } catch {
           try {
             await instance.fs.writeFile(
               "/.npmrc",
-              ["audit=false", "fund=false", "progress=false", "prefer-offline=true"].join("\n")
+              `${npmrcContents(DEFAULT_MAXSOCKETS)}\nprefer-offline=true`
             );
           } catch {
             // Non-fatal — worst case installs just use npm's defaults.

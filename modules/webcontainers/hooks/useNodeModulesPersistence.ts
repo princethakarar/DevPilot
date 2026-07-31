@@ -7,24 +7,39 @@ import type { TemplateFolder, TemplateItem } from "@/modules/playground/lib/path
 import { fallbackToNpmInstall } from "@/lib/snapshot/loader";
 import { checkForPartialInstall } from "@/lib/boot/install-verifier";
 import {
-  computePackageJsonHash,
+  computeDependencyCacheKey,
   tryRestoreNodeModules,
   tryRestoreFromBlob,
   watchForInstallCompletion,
   captureAndStoreNodeModules,
   uploadNodeModulesToBlob,
+  type DepCacheProgress,
 } from "../lib/node-modules-persistence";
+import { depLog, depWarn, depTimer } from "@/lib/dep-cache-debug";
+import { DEFAULT_MAXSOCKETS } from "@/lib/boot/npm-flags";
 
-function findPackageJsonContent(folder: TemplateFolder): string | null {
+function findFileContent(
+  folder: TemplateFolder,
+  filename: string,
+  fileExtension: string
+): string | null {
   for (const item of folder.items as TemplateItem[]) {
     if ("filename" in item) {
-      if (item.filename === "package" && item.fileExtension === "json") return item.content;
+      if (item.filename === filename && item.fileExtension === fileExtension) return item.content;
     } else if ("folderName" in item) {
-      const nested = findPackageJsonContent(item);
+      const nested = findFileContent(item, filename, fileExtension);
       if (nested) return nested;
     }
   }
   return null;
+}
+
+function findPackageJsonContent(folder: TemplateFolder): string | null {
+  return findFileContent(folder, "package", "json");
+}
+
+function findPackageLockContent(folder: TemplateFolder): string | null {
+  return findFileContent(folder, "package-lock", "json");
 }
 
 function hasDeclaredDependencies(pkgJson: string): boolean {
@@ -88,17 +103,43 @@ export function useNodeModulesPersistence(
         const pkgJson = findPackageJsonContent(templateData);
         if (!pkgJson) return;
 
-        const pkgHash = await computePackageJsonHash(pkgJson);
+        const lockJson = findPackageLockContent(templateData);
+        const pkgHash = await computeDependencyCacheKey(pkgJson, lockJson);
         if (cancelled) return;
 
+        depLog("boot: resolved dependency cache key", {
+          pkgHash: pkgHash.slice(0, 12),
+          keyedOn: lockJson ? "package.json + package-lock.json" : "package.json only",
+        });
+
+        // Surfaced through the same toast the auto-install uses, so a large
+        // tree visibly counts files instead of sitting on one static message
+        // for minutes. Throttled to whole percent changes — the nextjs starter
+        // fires this ~1,100 times during a restore.
+        let lastPct = -1;
+        let progressToastId: string | number | undefined;
+        const onProgress = (p: DepCacheProgress) => {
+          if (cancelled || p.total === 0) return;
+          const pct = Math.floor((p.completed / p.total) * 100);
+          if (pct === lastPct) return;
+          lastPct = pct;
+          progressToastId = toast.loading(`${p.message} (${pct}%)`, { id: progressToastId });
+        };
+        const dismissProgress = () => {
+          if (progressToastId !== undefined) toast.dismiss(progressToastId);
+          progressToastId = undefined;
+          lastPct = -1;
+        };
+
         let restoredFrom: "local" | "blob" | null = null;
-        if (await tryRestoreNodeModules(instance, pkgHash)) {
+        if (await tryRestoreNodeModules(instance, pkgHash, onProgress)) {
           restoredFrom = "local";
-        } else if (await tryRestoreFromBlob(instance, pkgHash)) {
+        } else if (await tryRestoreFromBlob(instance, pkgHash, onProgress)) {
           // Level 1 miss, Level 2 (Blob CDN) hit — shared cache populated by
           // some other user's earlier Level 3 install of the same dependency set.
           restoredFrom = "blob";
         }
+        dismissProgress();
 
         let restored = restoredFrom !== null;
         if (restored) {
@@ -125,13 +166,32 @@ export function useNodeModulesPersistence(
         }
         if (cancelled) return;
 
-        cleanupWatch = watchForInstallCompletion(instance, () => {
-          captureAndStoreNodeModules(instance, pkgHash)
-            .then((bundle) => {
-              if (bundle) uploadNodeModulesToBlob(pkgHash, bundle);
-            })
-            .catch(() => {});
-        });
+        // Only arm the capture watcher when this boot could actually produce
+        // something worth caching — i.e. when we're about to run a real
+        // install.
+        //
+        // Previously it was armed unconditionally, so a SUCCESSFUL restore
+        // immediately tripped its own watcher (restoring writes thousands of
+        // files under node_modules): the tree got re-walked, re-gzipped and
+        // re-uploaded on every single warm boot, only for the upload to be
+        // correctly rejected by the route's write-gate for still being within
+        // MAX_AGE_MS. Pure waste — hundreds of MB of work per boot to
+        // reproduce a bundle that was already there.
+        if (!restored) {
+          cleanupWatch = watchForInstallCompletion(instance, () => {
+            captureAndStoreNodeModules(instance, pkgHash, pkgJson, onProgress)
+              .then((bundle) => {
+                dismissProgress();
+                if (bundle) return uploadNodeModulesToBlob(pkgHash, bundle, onProgress);
+                return false;
+              })
+              .then(() => dismissProgress())
+              .catch((err) => {
+                dismissProgress();
+                depWarn("post-install capture failed (non-fatal):", err);
+              });
+          });
+        }
 
         // Nothing usable cached — either nothing was cached, or a restored
         // bundle failed the integrity check above — and this template
@@ -139,8 +199,24 @@ export function useNodeModulesPersistence(
         // leaving the user to type `npm install` themselves. The plain Node
         // starter has none, so it's skipped entirely.
         if (!restored && hasDeclaredDependencies(pkgJson)) {
-          const toastId = toast.info("Installing dependencies…");
-          const result = await fallbackToNpmInstall(instance, () => {});
+          const toastId = toast.loading("Installing dependencies…");
+          // Timed permanently (behind the debug flag) rather than measured
+          // ad-hoc: "how long does a cold npm install actually take in the
+          // sandbox" is the single number this whole cache exists to reduce,
+          // and it was previously not recorded anywhere.
+          const installDone = depTimer(
+            `L3 npm install (cold) — maxsockets=${DEFAULT_MAXSOCKETS}`
+          );
+          const result = await fallbackToNpmInstall(instance, (progress) => {
+            if (cancelled) return;
+            // npm's own output is the only progress signal available during
+            // the install phase; surface its last line rather than a static
+            // message so a long nextjs install doesn't look frozen.
+            if (progress.phase === "installing" && progress.message) {
+              toast.loading(progress.message.slice(0, 120), { id: toastId });
+            }
+          });
+          installDone({ ok: result.ok });
           if (cancelled) return;
 
           if (result.ok) {

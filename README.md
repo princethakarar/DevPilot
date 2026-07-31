@@ -156,7 +156,7 @@ sequenceDiagram
 
 ### 📄 Multi-Framework Project Templates
 *   **6 Starter Templates**: React (TypeScript), Next.js, Vue, Angular, Express, and Node.js — each with pre-configured build tooling and sensible defaults.
-*   **Snapshot Caching Pipeline**: Two-tier dependency caching (IndexedDB → npm fallback) with pre-built `node_modules` snapshots for near-instant project boot.
+*   **Snapshot Caching Pipeline**: Three-tier dependency caching (IndexedDB → CDN → npm fallback) with pre-built `node_modules` snapshots for near-instant project boot.
 *   **Boot Reliability Engine**: Smart retry with progressive strategy escalation (`--legacy-peer-deps` → `--force`), install verification, and real-time error classification.
 
 ### 🔐 Authentication & User Management
@@ -193,10 +193,11 @@ The application is a single Next.js 16 deployment with distinct runtime layers c
 
 ## 🛠️ Detailed Technical Deep-Dives
 
-### 🔄 Snapshot Caching Pipeline (2-Tier Dependency Speed System)
+### 🔄 Snapshot Caching Pipeline (3-Tier Dependency Speed System)
 To eliminate the 30–90 second `npm install` cold start on every project load:
 1.  **IndexedDB Cache**: Pre-built `node_modules` tarballs stored as blobs in the browser via `idb-keyval`, keyed by content hash.
-2.  **npm Install**: Fallback with progressive retry strategies and post-install integrity verification.
+2.  **CDN Snapshot**: Fetching pre-built `.tar.gz` snapshots directly from `https://snapshots.devpilot.app`.
+3.  **npm Install**: Fallback with progressive retry strategies and post-install integrity verification.
 
 ### 🛡️ Boot Reliability & Error Recovery
 WebContainer's WASM filesystem has a write-back cache — `npm install` can exit before files are fully flushed. DevPilot mitigates this with:

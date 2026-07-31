@@ -45,6 +45,25 @@ export function countTemplateFiles(folder: TemplateFolder): number {
 }
 
 /**
+ * Ceiling for package-lock.json specifically, independent of ScanOptions'
+ * general maxFileSize. Lockfiles are legitimately far larger than source
+ * files and must be shipped whole or not at all — see the size check in
+ * processDirectory for why truncating one is worse than omitting it.
+ *
+ * Sized against the REAL binding constraint, which is not this number:
+ * the whole scanned tree is stored as a single MongoDB document
+ * (upsertTemplateFileForPlayground -> TemplateFile.content), and BSON caps a
+ * document at 16MB. A ceiling of 16MB here would therefore let through a
+ * lockfile that passes this check and then fails the Mongo write with an
+ * opaque driver error — the guard would never actually bind.
+ *
+ * 8MB leaves the other half of the document for everything else, and is still
+ * ~11x the largest lockfile any current starter ships (react-ts, 716KB;
+ * next largest vue at 395KB). Measured, not guessed.
+ */
+const LOCKFILE_MAX_BYTES = 8 * 1024 * 1024;
+
+/**
  * Options for scanning template directories
  */
 interface ScanOptions {
@@ -84,7 +103,15 @@ export async function scanTemplateDirectory(
   // Set default options
   const defaultOptions: ScanOptions = {
     ignoreFiles: [
-      'package-lock.json',
+      // package-lock.json is deliberately NOT ignored. Without it npm has to
+      // re-resolve the whole semver graph against the registry on every cold
+      // install — measured at 398 packages for the nextjs starter — and that
+      // resolution is serialised by the maxsockets cap. Shipping the lockfile
+      // skips that phase entirely and, just as importantly, makes the
+      // dependency-cache key honest: SHA-256(package.json) alone can't tell
+      // `^18.0.0`-resolved-in-March from `^18.0.0`-resolved-in-July, which is
+      // what the 7-day TTL in lib/dependency-cache-ttl.ts was papering over.
+      // See LOCKFILE_MAX_BYTES below — a truncated lockfile is worse than none.
       'yarn.lock',
       '.DS_Store',
       'thumbs.db',
@@ -206,9 +233,28 @@ async function processDirectory(
           let content: string;
           let encoding: "base64" | undefined;
 
-          // Check file size before reading content
-          if (options.maxFileSize && stats.size > options.maxFileSize) {
-            content = `[File content not included: size (${stats.size} bytes) exceeds maximum allowed size (${options.maxFileSize} bytes)]`;
+          // Check file size before reading content.
+          //
+          // maxFileSize's placeholder-string behaviour is fine for source files
+          // (the user sees why it was elided) but actively harmful for a
+          // lockfile: npm would read the placeholder, fail to parse it as JSON,
+          // and error out — strictly worse than having no lockfile at all,
+          // where it would simply resolve from scratch. So lockfiles get their
+          // own, much higher ceiling, and if they somehow blow past even that
+          // they're omitted entirely rather than corrupted. Today's largest
+          // starter lockfile is react-ts at ~733KB, comfortably under both.
+          const isLockfile = entryName === 'package-lock.json';
+          const sizeLimit = isLockfile ? LOCKFILE_MAX_BYTES : options.maxFileSize;
+
+          if (sizeLimit && stats.size > sizeLimit) {
+            if (isLockfile) {
+              console.warn(
+                `Omitting ${entryPath}: ${stats.size} bytes exceeds the ${LOCKFILE_MAX_BYTES}-byte lockfile ceiling. ` +
+                  `npm will fall back to full resolution for this template.`
+              );
+              continue;
+            }
+            content = `[File content not included: size (${stats.size} bytes) exceeds maximum allowed size (${sizeLimit} bytes)]`;
           } else if (isBinaryFileExtension(fileExtension)) {
             // Read as raw bytes, not utf8 — utf8-decoding arbitrary binary bytes
             // (e.g. a .ico) is lossy (invalid sequences become replacement

@@ -65,20 +65,42 @@ async function existingEntryAllowsWrite(pathname: string): Promise<{ allow: bool
     return { allow: false, reason: "Existing entry has an implausible header length" };
   }
 
-  let headerRes: Response;
-  try {
-    headerRes = await fetch(url, { headers: { Range: `bytes=4-${3 + headerLen}` } });
-  } catch {
-    return { allow: false, reason: "Network error reading existing entry header" };
-  }
-  if (headerRes.status !== 200 && headerRes.status !== 206) {
-    return { allow: false, reason: `Unexpected status ${headerRes.status} reading existing entry header` };
+  // Loop rather than a single Range request: a freshly-written object was
+  // observed returning a SHORT range (1365212 of 1365216 bytes) for exactly
+  // this read. With a single request that truncation surfaces as "header is
+  // not valid JSON", which fails closed — permanently blocking the legitimate
+  // post-expiry refresh this gate is supposed to allow.
+  const headerChunks: Uint8Array[] = [];
+  let received = 0;
+
+  while (received < headerLen) {
+    let headerRes: Response;
+    try {
+      headerRes = await fetch(url, { headers: { Range: `bytes=${4 + received}-${3 + headerLen}` } });
+    } catch {
+      return { allow: false, reason: "Network error reading existing entry header" };
+    }
+    if (headerRes.status !== 200 && headerRes.status !== 206) {
+      return { allow: false, reason: `Unexpected status ${headerRes.status} reading existing entry header` };
+    }
+
+    const chunk = new Uint8Array(await headerRes.arrayBuffer());
+    if (chunk.byteLength === 0) {
+      return { allow: false, reason: "Existing entry header ended early" };
+    }
+    headerChunks.push(chunk);
+    received += chunk.byteLength;
   }
 
   let cachedAt: unknown;
   try {
-    const headerBytes = new Uint8Array(await headerRes.arrayBuffer());
-    const header = JSON.parse(new TextDecoder().decode(headerBytes));
+    const headerBytes = new Uint8Array(received);
+    let offset = 0;
+    for (const chunk of headerChunks) {
+      headerBytes.set(chunk, offset);
+      offset += chunk.byteLength;
+    }
+    const header = JSON.parse(new TextDecoder().decode(headerBytes.subarray(0, headerLen)));
     cachedAt = header.cachedAt;
   } catch {
     return { allow: false, reason: "Existing entry header is not valid JSON" };
