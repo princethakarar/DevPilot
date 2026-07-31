@@ -7,8 +7,10 @@ export default function PlaygroundLayout({
   children: React.ReactNode;
 }) {
   return (
-    <SidebarProvider>
-      {children}
-    </SidebarProvider>
+    <div className="dark h-full w-full bg-background text-foreground flex flex-col">
+      <SidebarProvider>
+        {children}
+      </SidebarProvider>
+    </div>
   );
 }
