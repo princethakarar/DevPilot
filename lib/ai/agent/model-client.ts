@@ -1,5 +1,15 @@
 import { AGENT_TOOLS } from "./tools";
-import { estimateRequestTokens, waitForTokenBudget, reserveEstimate, finalizeReservation, releaseReservation } from "./token-budget";
+import {
+  estimatePromptTokens,
+  estimateBilledTokens,
+  waitForTokenBudget,
+  reserveEstimate,
+  reconcileReservation,
+  releaseReservation,
+  MAX_COMPLETION_TOKENS,
+  CHARS_PER_TOKEN,
+} from "./token-budget";
+import { recordObservedLimits } from "./model-limits";
 
 /**
  * Default model for the autonomous loop. Previously pinned to
@@ -62,9 +72,9 @@ export interface AgentModelResult {
 export class AgentModelError extends Error {}
 
 /**
- * Groq returns two distinct error shapes when a request bumps into the TPM
- * (tokens-per-minute) budget, and they need different responses:
- *  - "rate_limited" (usually 429): cumulative usage over the current time
+ * Groq returns three distinct error shapes when a request bumps into a quota,
+ * and they need three different responses:
+ *  - "rate_limited" (usually 429): cumulative usage over the current MINUTE
  *    window is exhausted. The error message includes a concrete wait
  *    ("Please try again in 10.65s") — waiting that long and resending the
  *    SAME request is a valid fix.
@@ -73,19 +83,43 @@ export class AgentModelError extends Error {}
  *    budget outright, regardless of timing. Waiting and resending the
  *    identical payload will fail again every time — the only fix is
  *    shrinking the request itself before retrying.
- * Distinguished by message content, not just status code, since Groq has
- * used 413 for both request-too-large and (historically) other cases.
+ *  - "daily_exhausted" (429, "tokens per day (TPD): Limit 100000, Used
+ *    99848"): the DAILY quota is gone. Structurally different from the other
+ *    two because the stated wait is in the tens of minutes — a real one was
+ *    "try again in 22m4.512s" — which is far beyond AGENT_CAPS.maxWallClockMs
+ *    (5 minutes). Waiting is not an available strategy; the only useful moves
+ *    are a model with its own separate daily budget, or telling the user
+ *    plainly when the quota resets.
+ * Distinguished by message content, not just status code, since Groq uses 429
+ * for both the minute and the day window and has used 413 for more than one
+ * case historically.
  */
+export type RateLimitKind = "too_large" | "daily_exhausted" | "rate_limited";
+
 export class AgentRateLimitError extends AgentModelError {
-  readonly kind: "too_large" | "rate_limited";
+  readonly kind: RateLimitKind;
   readonly waitSeconds: number | null;
 
-  constructor(kind: "too_large" | "rate_limited", waitSeconds: number | null, message: string) {
+  constructor(kind: RateLimitKind, waitSeconds: number | null, message: string) {
     super(message);
     this.kind = kind;
     this.waitSeconds = waitSeconds;
   }
 }
+
+/**
+ * The model's reply was cut off because it hit MAX_COMPLETION_TOKENS
+ * (`finish_reason: "length"`), rather than finishing what it meant to say.
+ * Almost always a write_file whose content is too large to emit in one call.
+ *
+ * Deliberately NOT retryable, and deliberately not a reason to switch models:
+ * the ceiling is ours, it is the same on every model, and the model will
+ * regenerate the same over-long content and hit the same wall every time.
+ * Retrying it burns a full prompt+MAX_COMPLETION_TOKENS charge per attempt
+ * against a budget that is already the thing under pressure — which is what
+ * the generic tool-call-generation retry path used to do to it.
+ */
+export class AgentResponseTruncatedError extends AgentModelError {}
 
 /**
  * Groq-specific failure mode distinct from rate limiting: the model itself
@@ -133,7 +167,34 @@ function parseToolCallGenerationFailure(bodyText: string): { message: string; fa
   return { message: error.message, failedGeneration: error.failed_generation ?? null };
 }
 
-function parseRateLimitInfo(bodyText: string, retryAfterHeader: string | null): { kind: "too_large" | "rate_limited"; waitSeconds: number | null; message: string } {
+/**
+ * Groq writes its wait times in a compound duration format, not plain
+ * seconds: a minute-window limit says "try again in 13.68s" but a daily one
+ * says "try again in 13m40.8s" (and "22m4.512s" has been seen live). The
+ * previous pattern — /try again in ([\d.]+)s/ — matched only the
+ * seconds-only form, so every minute-formatted wait silently fell through to
+ * DEFAULT_RATE_LIMIT_WAIT_SECONDS and the agent retried three times at 15s
+ * against a 13-minute cooldown.
+ *
+ * All three groups are optional so any subset ("40.8s", "13m", "1h2m3s")
+ * parses; the caller-facing helper below rejects a match with no groups at
+ * all, so a bare "try again in" reports null rather than a bogus 0.
+ */
+const WAIT_RE = /try again in\s+(?:(\d+(?:\.\d+)?)h)?(?:(\d+(?:\.\d+)?)m)?(?:(\d+(?:\.\d+)?)s)?/i;
+
+export function parseWaitSeconds(message: string): number | null {
+  const m = message.match(WAIT_RE);
+  if (!m || (!m[1] && !m[2] && !m[3])) return null;
+  return parseFloat(m[1] ?? "0") * 3600 + parseFloat(m[2] ?? "0") * 60 + parseFloat(m[3] ?? "0");
+}
+
+function classifyRateLimit(message: string): RateLimitKind {
+  if (/request too large|reduce your message size/i.test(message)) return "too_large";
+  if (/tokens per day|requests per day|\bTPD\b|\bRPD\b/i.test(message)) return "daily_exhausted";
+  return "rate_limited";
+}
+
+function parseRateLimitInfo(bodyText: string, retryAfterHeader: string | null): { kind: RateLimitKind; waitSeconds: number | null; message: string } {
   let message = bodyText;
   try {
     const parsed = JSON.parse(bodyText);
@@ -142,13 +203,11 @@ function parseRateLimitInfo(bodyText: string, retryAfterHeader: string | null): 
     // Not JSON — use the raw body text as the message.
   }
 
-  const waitMatch = message.match(/try again in ([\d.]+)s/i);
-  const parsedWait = waitMatch ? parseFloat(waitMatch[1]) : null;
+  const parsedWait = parseWaitSeconds(message);
   const headerWait = retryAfterHeader ? Number(retryAfterHeader) : null;
   const waitSeconds = parsedWait ?? (headerWait !== null && Number.isFinite(headerWait) ? headerWait : null);
 
-  const tooLarge = /request too large|reduce your message size/i.test(message);
-  return { kind: tooLarge ? "too_large" : "rate_limited", waitSeconds, message };
+  return { kind: classifyRateLimit(message), waitSeconds, message };
 }
 
 /**
@@ -211,9 +270,14 @@ export async function callAgentModel(
     throw new AgentModelError("GROQ_API_KEY is not configured in the environment.");
   }
 
-  const estimate = estimateRequestTokens(messages);
+  // Pace against what Groq will actually BILL for this call (prompt + the
+  // reserved completion ceiling), against THIS model's own window — not
+  // against a prompt-only estimate, and not against a budget shared with the
+  // other model. See token-budget.ts's header comment.
+  const estimate = estimateBilledTokens(messages, MAX_COMPLETION_TOKENS);
   await waitForTokenBudget(
     estimate,
+    model,
     async (waitMs) => {
       if (onStatus) await onStatus(`Pacing request — waiting ~${Math.ceil(waitMs / 1000)}s to stay under the AI provider's rate limit…`);
     },
@@ -222,7 +286,7 @@ export async function callAgentModel(
   );
   if (stopSignal?.aborted) throw new AgentModelError("Stopped by user request.");
 
-  const reservationId = reserveEstimate(estimate);
+  const reservation = reserveEstimate(estimate, model);
   let response: Response;
   try {
     response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
@@ -237,18 +301,19 @@ export async function callAgentModel(
         tools: AGENT_TOOLS,
         tool_choice: "auto",
         temperature: 0.2,
-        // write_file's arguments carry a whole file's content as one JSON
-        // string field; 2000 was cutting that off mid-generation for
-        // anything past a small file, which Groq's own tool-call JSON
-        // validation then rejects as "Failed to call a function" — a
-        // deterministic failure that retrying the identical request (see
-        // rate-limit-retry.ts) can never fix, since the model regenerates
-        // the same too-long content and hits the same wall every time.
-        // Kept below TPM_LIMIT_ESTIMATE (token-budget.ts) rather than raised
-        // to cover every possible file, since a single call's completion
-        // competing for most of the whole per-minute budget would just trade
-        // this failure mode for constant 413s.
-        max_tokens: 4096,
+        // Defined in token-budget.ts because Groq RESERVES this against the
+        // TPM window on every call whether the model uses it or not — the
+        // request and the ledger have to read the same constant or they
+        // drift, which is exactly how this went unnoticed at 4096.
+        //
+        // Sizing it is a genuine tradeoff, not a free choice. Too low and
+        // write_file's arguments (a whole file's content in one JSON string
+        // field) get cut mid-generation, which Groq's own tool-call
+        // validation rejects as "Failed to call a function"; too high and
+        // every turn reserves budget it will never use, which at 4096 left
+        // the 6000-TPM fallback model 1,904 tokens of prompt headroom
+        // against a measured 1,547-token floor. See MAX_COMPLETION_TOKENS.
+        max_tokens: MAX_COMPLETION_TOKENS,
       }),
       // Combined so a user-requested stop (relay.ts's getStopSignal) aborts
       // an in-flight Groq call exactly like a timeout would, instead of the
@@ -257,14 +322,19 @@ export async function callAgentModel(
     });
   } catch (err) {
     // Never actually reached Groq, so nothing was billed against the window.
-    releaseReservation(reservationId);
+    releaseReservation(reservation);
     throw err;
   }
 
+  // Every response carries the provider's own view of this model's limit —
+  // including error responses, which is exactly when we most want it. Recorded
+  // before any throw below so a 429 still teaches us the real ceiling.
+  recordObservedLimits(model, response.headers);
+
   if (!response.ok) {
-    // A rejected/failed request isn't billed — release, don't finalize, so
+    // A rejected/failed request isn't billed — release, don't reconcile, so
     // the ledger reflects real consumption, not attempted consumption.
-    releaseReservation(reservationId);
+    releaseReservation(reservation);
     const bodyText = await response.text().catch(() => "");
     if (response.status === 429 || response.status === 413) {
       const info = parseRateLimitInfo(bodyText, response.headers.get("retry-after"));
@@ -279,10 +349,29 @@ export async function callAgentModel(
   }
 
   const data = await response.json();
-  const message = data.choices?.[0]?.message;
+  const choice = data.choices?.[0];
+  const message = choice?.message;
   if (!message) {
-    releaseReservation(reservationId);
+    releaseReservation(reservation);
     throw new AgentModelError("Agent model returned no message.");
+  }
+
+  // What stays deducted from the rolling window once the call settles. Groq
+  // checks admission against prompt + max_tokens (see reserveEstimate above)
+  // but only *consumes* what the exchange actually used — measured directly:
+  // a max_tokens=2500 call whose completion was 2 tokens moved the remaining
+  // counter by 81, not by 2,542. Reserve the ceiling, settle on the actual.
+  // (token-budget.ts's header accounts for that 81 and for why the header
+  // counter can't be used as a per-call ledger.)
+  const settledTokens =
+    data.usage?.total_tokens ?? (data.usage?.prompt_tokens ?? estimatePromptTokens(messages));
+
+  if (choice.finish_reason === "length") {
+    reconcileReservation(reservation, settledTokens);
+    throw new AgentResponseTruncatedError(
+      `The model's reply was cut off at the ${MAX_COMPLETION_TOKENS}-token per-response limit before it finished. ` +
+        `This usually means a single write_file tried to emit a file too large to fit in one call — split the change into smaller files or edits.`
+    );
   }
 
   const toolCalls: AgentToolCall[] = (message.tool_calls ?? []).map((tc: { id: string; function: { name: string; arguments: string } }) => {
@@ -295,13 +384,16 @@ export async function callAgentModel(
     return { id: tc.id, name: tc.function.name, arguments: args };
   });
 
-  // Groq reports usage when available; fall back to a char/4 estimate over the
-  // request+response text so the run always has a cost signal even if the
-  // provider omits usage on some responses.
+  // The reservation held prompt + MAX_COMPLETION_TOKENS for the whole time
+  // the request was in flight, which is what keeps a second concurrent call
+  // from being admitted into headroom this one might still need. Now that the
+  // exchange has settled, shrink it to what was really consumed so the pacer
+  // doesn't idle on budget nobody is using.
+  reconcileReservation(reservation, settledTokens);
+
   const approxTokens: number =
     data.usage?.total_tokens ??
-    Math.ceil((JSON.stringify(messages).length + JSON.stringify(message).length) / 4);
+    Math.ceil((JSON.stringify(messages).length + JSON.stringify(message).length) / CHARS_PER_TOKEN);
 
-  finalizeReservation(reservationId, approxTokens);
   return { message, toolCalls, approxTokens };
 }

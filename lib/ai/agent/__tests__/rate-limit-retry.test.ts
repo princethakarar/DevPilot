@@ -1,6 +1,14 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { callModelWithRateLimitHandling, createModelFallbackState, MAX_RATE_LIMIT_RETRIES, MAX_TOOL_CALL_GEN_RETRIES } from "../rate-limit-retry";
+import {
+  callModelWithRateLimitHandling,
+  createModelFallbackState,
+  activeModel,
+  MAX_RATE_LIMIT_RETRIES,
+  MAX_TOOL_CALL_GEN_RETRIES,
+} from "../rate-limit-retry";
 import { AgentModelUnavailableError, type AgentModelMessage } from "../model-client";
+import { __resetTokenBudgetForTests } from "../token-budget";
+import { __resetObservedLimitsForTests } from "../model-limits";
 
 const PRIMARY_MODEL = "llama-3.3-70b-versatile"; // model-client.ts's DEFAULT_AGENT_MODEL
 const FALLBACK_MODEL = "llama-3.1-8b-instant"; // model-client.ts's DEFAULT_FALLBACK_AGENT_MODEL
@@ -33,6 +41,12 @@ const TOOL_CALL_GEN_FAILURE_BODY = {
     failed_generation: "{\"name\": \"write_file\", \"arguments\": \"{ malformed",
   },
 };
+const DAILY_EXHAUSTED_BODY = {
+  error: {
+    message:
+      "Rate limit reached for model `llama-3.3-70b-versatile` in organization `org_x` service tier `on_demand` on tokens per day (TPD): Limit 100000, Used 99848, Requested 1685. Please try again in 22m4.512s.",
+  },
+};
 const SUCCESS_BODY = { choices: [{ message: { role: "assistant", content: "ok", tool_calls: [] } }], usage: { total_tokens: 10 } };
 
 const noSleep = () => Promise.resolve();
@@ -41,6 +55,8 @@ beforeEach(() => {
   process.env.GROQ_API_KEY = "test-key";
   delete process.env.AGENT_GROQ_MODEL;
   delete process.env.AGENT_GROQ_FALLBACK_MODEL;
+  __resetTokenBudgetForTests();
+  __resetObservedLimitsForTests();
 });
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -160,6 +176,59 @@ describe("callModelWithRateLimitHandling", () => {
     expect(fetchMock).toHaveBeenCalledTimes(MAX_TOOL_CALL_GEN_RETRIES + 1);
   });
 
+  it("does NOT retry a truncated response — the completion ceiling is ours and identical on every attempt", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse(200, {
+        choices: [{ finish_reason: "length", message: { role: "assistant", content: "cut off mid-" } }],
+        usage: { prompt_tokens: 100, total_tokens: 2600 },
+      })
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const outcome = await callModelWithRateLimitHandling([{ role: "user", content: "hi" }], () => {}, noSleep);
+
+    expect(outcome.ok).toBe(false);
+    expect(fetchMock).toHaveBeenCalledTimes(1); // no retry ladder, no model switch
+    expect((outcome as { reason: string }).reason).toMatch(/cut off at the \d+-token per-response limit/);
+  });
+
+  it("on a daily-quota (TPD) error, skips the same-model retry ladder and goes straight to the fallback", async () => {
+    let calls = 0;
+    const fetchMock = vi.fn().mockImplementation(async () => {
+      calls += 1;
+      return calls === 1 ? jsonResponse(429, DAILY_EXHAUSTED_BODY) : jsonResponse(200, SUCCESS_BODY);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const statusMessages: string[] = [];
+    const outcome = await callModelWithRateLimitHandling(
+      [{ role: "user", content: "hi" }],
+      (m) => void statusMessages.push(m),
+      noSleep
+    );
+
+    expect(outcome.ok).toBe(true);
+    // One attempt on the primary, then straight to the fallback — crucially NOT
+    // MAX_RATE_LIMIT_RETRIES attempts waiting out a 22-minute cooldown.
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(modelOf(fetchMock, 0)).toBe(PRIMARY_MODEL);
+    expect(modelOf(fetchMock, 1)).toBe(FALLBACK_MODEL);
+    expect(statusMessages[0]).toMatch(/Daily token quota exhausted/);
+  });
+
+  it("reports a daily-quota exhaustion with its real reset time once no model is left to try", async () => {
+    disableFallback();
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(429, DAILY_EXHAUSTED_BODY));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const outcome = await callModelWithRateLimitHandling([{ role: "user", content: "hi" }], () => {}, noSleep);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect((outcome as { reason: string }).reason).toMatch(/daily token quota is exhausted/i);
+    // 22m4.512s -> "about 23 minutes", not the old misleading "try again in a minute".
+    expect((outcome as { reason: string }).reason).toMatch(/about 23 minutes/);
+  });
+
   it("stops cleanly once the stop signal is aborted mid-backoff, without exhausting all retries", async () => {
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse(429, RATE_LIMITED_BODY));
     vi.stubGlobal("fetch", fetchMock);
@@ -270,6 +339,11 @@ describe("automatic model fallback", () => {
     expect(createModelFallbackState()).toEqual({ usingFallback: false });
   });
 
+  it("activeModel reports which model a run is currently on", () => {
+    expect(activeModel({ usingFallback: false })).toBe(PRIMARY_MODEL);
+    expect(activeModel({ usingFallback: true })).toBe(FALLBACK_MODEL);
+  });
+
   it("a fallbackState shared across two calls stays on the fallback for the second call once the first one switched", async () => {
     let calls = 0;
     const fetchMock = vi.fn().mockImplementation(async () => {
@@ -283,6 +357,13 @@ describe("automatic model fallback", () => {
 
     await callModelWithRateLimitHandling(messages, () => {}, noSleep, undefined, fallbackState);
     expect(fallbackState.usingFallback).toBe(true);
+
+    // This test is about model stickiness, not pacing. Two consecutive turns
+    // genuinely do not both fit inside the fallback model's 6,000 TPM window
+    // (each reserves ~3,460), so without clearing the window the pacer would
+    // correctly block the second call for its full 75s wait — a real
+    // behaviour, but not the one under test here.
+    __resetTokenBudgetForTests();
 
     await callModelWithRateLimitHandling(messages, () => {}, noSleep, undefined, fallbackState);
     // Second run's very first (and only) call already goes straight to the fallback.

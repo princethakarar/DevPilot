@@ -17,8 +17,8 @@ import { AGENT_SYSTEM_PROMPT } from "./tools";
 import { AGENT_CAPS, StallTracker } from "./stall-detector";
 import { emitRunEvent, isStopRequested, getStopSignal, requestBrowserCommand, type CommandExecutionResult } from "./relay";
 import { trimToolResultHistory, findLiveReadPaths } from "./context-trim";
-import { callModelWithRateLimitHandling, createModelFallbackState } from "./rate-limit-retry";
-import { estimateRequestTokens, TPM_LIMIT_ESTIMATE, TPM_SAFETY_RATIO } from "./token-budget";
+import { callModelWithRateLimitHandling, createModelFallbackState, activeModel } from "./rate-limit-retry";
+import { exceedsSafeBudget } from "./token-budget";
 
 // Only the most recent tool result is kept in full on every turn — evidence-
 // driven, not the spec's "1-2" range's upper bound: a single real file read
@@ -185,7 +185,10 @@ export async function runAgentOrchestrator({ runId, playgroundId, task }: RunAge
       // the TPM budget, trim harder (including the most recent) rather than
       // wait for a 413 to force the issue reactively.
       trimToolResultHistory(messages, MAX_FULL_TOOL_RESULTS);
-      if (estimateRequestTokens(messages) > TPM_LIMIT_ESTIMATE * TPM_SAFETY_RATIO) {
+      // Checked against whichever model this turn will actually use: the two
+      // have different TPM ceilings (12k vs 6k), so a single shared threshold
+      // both over-trimmed the primary and under-trimmed the fallback.
+      if (exceedsSafeBudget(messages, activeModel(modelFallbackState))) {
         trimToolResultHistory(messages, 0);
         await log(runId, "status", "Context is large — trimming older tool results to stay under the AI provider's rate limit…");
       }

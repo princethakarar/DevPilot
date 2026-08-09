@@ -7,6 +7,7 @@ import {
   AgentModelError,
   AgentModelUnavailableError,
   AgentRateLimitError,
+  AgentResponseTruncatedError,
   AgentToolCallGenerationError,
 } from "./model-client";
 import { trimToolResultHistory } from "./context-trim";
@@ -43,7 +44,33 @@ export function createModelFallbackState(): ModelFallbackState {
   return { usingFallback: false };
 }
 
+/**
+ * Which model a run is currently on. Callers outside this module (the
+ * orchestrator's pre-send budget check) need it to pick the right TPM ceiling
+ * — the primary's is double the fallback's, so "which model" is not a detail
+ * they can skip.
+ */
+export function activeModel(state: ModelFallbackState): string {
+  return state.usingFallback ? resolveFallbackModel() : resolvePrimaryModel();
+}
+
 const STOPPED_OUTCOME: ModelCallOutcome = { ok: false, reason: "Stopped by user request." };
+
+/**
+ * A daily quota needs a different message from a per-minute one: "try again
+ * in a minute" is actively misleading when the real answer is "not until this
+ * evening". Uses the provider's own reset estimate when it gave one — which
+ * it now reliably does, since parseWaitSeconds understands the "13m40.8s"
+ * form these errors are written in.
+ */
+function describeDailyExhaustion(waitSeconds: number | null): string {
+  const base = "Your Groq daily token quota is exhausted, so the agent can't run any more steps today.";
+  if (waitSeconds === null) return `${base} It resets on a rolling 24-hour window.`;
+  const minutes = Math.ceil(waitSeconds / 60);
+  return minutes >= 60
+    ? `${base} Quota frees up in about ${Math.round(minutes / 60)}h.`
+    : `${base} Quota frees up in about ${minutes} minute${minutes === 1 ? "" : "s"}.`;
+}
 
 // Backoff waits here can run up to MAX_RATE_LIMIT_RETRIES * ~45s — chunking
 // the injected `sleep` into short steps and rechecking stopSignal between
@@ -134,6 +161,15 @@ export async function callModelWithRateLimitHandling(
           : new AgentModelError(`${err.message} No distinct fallback model is configured (AGENT_GROQ_FALLBACK_MODEL).`);
       }
 
+      // Non-retryable by construction, and not a reason to change models: the
+      // cap is ours (MAX_COMPLETION_TOKENS), identical on every model, so a
+      // retry regenerates the same over-long content and hits the same wall
+      // — while paying a full prompt+ceiling charge for the privilege. End
+      // the turn with the error's own actionable message instead.
+      if (err instanceof AgentResponseTruncatedError) {
+        return { ok: false, reason: err.message };
+      }
+
       if (err instanceof AgentToolCallGenerationError) {
         toolCallGenAttempt += 1;
         lastFailedGeneration = err.failedGeneration;
@@ -156,6 +192,22 @@ export async function callModelWithRateLimitHandling(
       }
 
       if (!(err instanceof AgentRateLimitError)) throw err;
+
+      // The DAILY quota is gone, so waiting is not a strategy: the provider's
+      // own stated wait for this has been measured at 13-22 minutes, against
+      // an AGENT_CAPS.maxWallClockMs of 5. Skip the same-model retry ladder
+      // entirely — those attempts cannot succeed and each one still costs a
+      // full prompt+ceiling charge against a quota that is already the
+      // problem. Hand straight to the fallback, which has its own separate
+      // daily budget, and otherwise stop with something the user can act on.
+      //
+      // (This reuses the existing one-shot escalation as-is. Gating
+      // escalation on available headroom is deliberately NOT done here — see
+      // the deferred item 4 of the Phase 1 proposal.)
+      if (err.kind === "daily_exhausted") {
+        if (await switchToFallback(model, `Daily token quota exhausted on "${model}"`)) continue;
+        return { ok: false, reason: describeDailyExhaustion(err.waitSeconds) };
+      }
 
       rateLimitAttempt += 1;
       if (rateLimitAttempt > MAX_RATE_LIMIT_RETRIES) {
