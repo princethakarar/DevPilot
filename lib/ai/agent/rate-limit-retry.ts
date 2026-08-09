@@ -11,6 +11,7 @@ import {
   AgentToolCallGenerationError,
 } from "./model-client";
 import { trimToolResultHistory } from "./context-trim";
+import { exceedsSafeBudget } from "./token-budget";
 
 export const MAX_RATE_LIMIT_RETRIES = 3;
 export const RATE_LIMIT_JITTER_MS = 1000;
@@ -43,6 +44,15 @@ export interface ModelFallbackState {
 export function createModelFallbackState(): ModelFallbackState {
   return { usingFallback: false };
 }
+
+/**
+ * Why an escalation attempt did or didn't happen.
+ *  - "switched": now on the fallback, retry the call.
+ *  - "unavailable": already on the fallback, or no distinct one is configured.
+ *  - "insufficient-headroom": a distinct fallback exists but this request is
+ *    too large for its rate limit, so it was skipped rather than attempted.
+ */
+export type FallbackDecision = "switched" | "unavailable" | "insufficient-headroom";
 
 /**
  * Which model a run is currently on. Callers outside this module (the
@@ -134,15 +144,44 @@ export async function callModelWithRateLimitHandling(
   let toolCallGenAttempt = 0;
   let lastFailedGeneration: string | null = null;
 
-  /** True, and resets same-model attempt counters, only the first time this is called for a given run. */
-  const switchToFallback = async (fromModel: string, reasonMessage: string): Promise<boolean> => {
-    if (fallbackState.usingFallback || !canFallBack) return false;
+  /**
+   * Switches this run to the fallback model, but only if that model can
+   * actually hold the request. Resets the same-model attempt counters, and
+   * only ever succeeds the first time it's called for a given run.
+   *
+   * The headroom gate is the point. The fallback is the SMALLER model — 6,000
+   * TPM against the primary's 12,000 — so at the current completion ceiling
+   * it has roughly 2,300 tokens of prompt headroom, while a measured baseline
+   * turn on a trivial four-file tree already runs 1,176-1,285 tokens before
+   * any real task context. Escalating a request the fallback cannot admit
+   * doesn't rescue the run: the call is rejected on arrival, and the run ends
+   * on a confusing "too large" from a model the user never chose instead of
+   * the real reason. Checking first costs nothing and fails honestly.
+   *
+   * Uses exceedsSafeBudget — the same predicate the orchestrator applies to
+   * the active model before each turn — so "does it fit?" has exactly one
+   * definition (token-budget.ts) rather than a second copy that can drift.
+   */
+  const switchToFallback = async (fromModel: string, reasonMessage: string): Promise<FallbackDecision> => {
+    if (fallbackState.usingFallback || !canFallBack) return "unavailable";
+    if (exceedsSafeBudget(messages, fallbackModel)) {
+      await onStatus(
+        `${reasonMessage}, but this request is too large for the fallback model ("${fallbackModel}") to accept — not attempting it.`
+      );
+      return "insufficient-headroom";
+    }
     fallbackState.usingFallback = true;
     rateLimitAttempt = 0;
     toolCallGenAttempt = 0;
     await onStatus(`${reasonMessage} — switching from "${fromModel}" to fallback model "${fallbackModel}"…`);
-    return true;
+    return "switched";
   };
+
+  /** Appended to a final failure reason so a skipped fallback is visible, not silent. */
+  const headroomNote = (decision: FallbackDecision): string =>
+    decision === "insufficient-headroom"
+      ? ` The smaller fallback model ("${fallbackModel}") was skipped because this request exceeds its rate limit — reduce the task's scope or let the agent work on fewer files at a time.`
+      : "";
 
   while (true) {
     if (stopSignal?.aborted) return STOPPED_OUTCOME;
@@ -154,8 +193,13 @@ export async function callModelWithRateLimitHandling(
       if (stopSignal?.aborted) return STOPPED_OUTCOME;
 
       if (err instanceof AgentModelUnavailableError) {
-        if (await switchToFallback(model, "Configured model unavailable")) continue;
-        // Already on the fallback (or there's no distinct fallback to try) — nothing left to switch to.
+        const decision = await switchToFallback(model, "Configured model unavailable");
+        if (decision === "switched") continue;
+        // Already on the fallback, no distinct fallback configured, or the
+        // fallback is too small for this request — nothing left to switch to.
+        if (decision === "insufficient-headroom") {
+          throw new AgentModelError(`${err.message}${headroomNote(decision)}`);
+        }
         throw canFallBack
           ? err
           : new AgentModelError(`${err.message} No distinct fallback model is configured (AGENT_GROQ_FALLBACK_MODEL).`);
@@ -174,11 +218,13 @@ export async function callModelWithRateLimitHandling(
         toolCallGenAttempt += 1;
         lastFailedGeneration = err.failedGeneration;
         if (toolCallGenAttempt > MAX_TOOL_CALL_GEN_RETRIES) {
-          if (await switchToFallback(model, `"${model}" repeatedly failed to generate a valid tool call`)) continue;
+          const decision = await switchToFallback(model, `"${model}" repeatedly failed to generate a valid tool call`);
+          if (decision === "switched") continue;
           return {
             ok: false,
             reason:
-              "The AI model repeatedly failed to generate a valid tool call for this step. Try rephrasing the task or breaking it into smaller steps.",
+              "The AI model repeatedly failed to generate a valid tool call for this step. Try rephrasing the task or breaking it into smaller steps." +
+              headroomNote(decision),
             // Groq's raw (often truncated) attempt at the tool call — not
             // shown to the user, but logged by the caller so a repeat of
             // this failure is diagnosable (e.g. cut off mid-JSON because of
@@ -201,20 +247,23 @@ export async function callModelWithRateLimitHandling(
       // problem. Hand straight to the fallback, which has its own separate
       // daily budget, and otherwise stop with something the user can act on.
       //
-      // (This reuses the existing one-shot escalation as-is. Gating
-      // escalation on available headroom is deliberately NOT done here — see
-      // the deferred item 4 of the Phase 1 proposal.)
+      // The escalation itself is gated on the fallback actually being able to
+      // hold the request — see switchToFallback.
       if (err.kind === "daily_exhausted") {
-        if (await switchToFallback(model, `Daily token quota exhausted on "${model}"`)) continue;
-        return { ok: false, reason: describeDailyExhaustion(err.waitSeconds) };
+        const decision = await switchToFallback(model, `Daily token quota exhausted on "${model}"`);
+        if (decision === "switched") continue;
+        return { ok: false, reason: describeDailyExhaustion(err.waitSeconds) + headroomNote(decision) };
       }
 
       rateLimitAttempt += 1;
       if (rateLimitAttempt > MAX_RATE_LIMIT_RETRIES) {
-        if (await switchToFallback(model, `Rate limit exceeded on "${model}"`)) continue;
+        const decision = await switchToFallback(model, `Rate limit exceeded on "${model}"`);
+        if (decision === "switched") continue;
         return {
           ok: false,
-          reason: "Task paused — AI provider rate limit exceeded. Try again in a minute, or reduce task scope.",
+          reason:
+            "Task paused — AI provider rate limit exceeded. Try again in a minute, or reduce task scope." +
+            headroomNote(decision),
         };
       }
 

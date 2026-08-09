@@ -6,7 +6,7 @@ import {
   MAX_RATE_LIMIT_RETRIES,
   MAX_TOOL_CALL_GEN_RETRIES,
 } from "../rate-limit-retry";
-import { AgentModelUnavailableError, type AgentModelMessage } from "../model-client";
+import { AgentModelError, AgentModelUnavailableError, type AgentModelMessage } from "../model-client";
 import { __resetTokenBudgetForTests } from "../token-budget";
 import { __resetObservedLimitsForTests } from "../model-limits";
 
@@ -342,6 +342,89 @@ describe("automatic model fallback", () => {
   it("activeModel reports which model a run is currently on", () => {
     expect(activeModel({ usingFallback: false })).toBe(PRIMARY_MODEL);
     expect(activeModel({ usingFallback: true })).toBe(FALLBACK_MODEL);
+  });
+
+  // ---- Headroom gating -----------------------------------------------------
+  // The fallback is the SMALLER model (6,000 TPM vs the primary's 12,000), so
+  // at MAX_COMPLETION_TOKENS=2500 it admits roughly 2,300 prompt tokens. A
+  // request above that cannot succeed there no matter what went wrong on the
+  // primary, so it must be skipped rather than attempted.
+
+  /** Comfortably over the fallback's ~2,300-token prompt headroom, comfortably under the primary's ~7,100. */
+  function oversizedForFallback(): AgentModelMessage[] {
+    return [{ role: "user", content: "x".repeat(6000) }];
+  }
+
+  it("skips the fallback entirely when the request is too large for it — no doomed call is made", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(429, RATE_LIMITED_BODY));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const statusMessages: string[] = [];
+    const outcome = await callModelWithRateLimitHandling(
+      oversizedForFallback(),
+      (m) => void statusMessages.push(m),
+      noSleep
+    );
+
+    // The primary's own retry ladder still runs; what must NOT happen is an
+    // extra attempt against the fallback that could only be rejected.
+    expect(fetchMock).toHaveBeenCalledTimes(MAX_RATE_LIMIT_RETRIES + 1);
+    for (let i = 0; i <= MAX_RATE_LIMIT_RETRIES; i++) expect(modelOf(fetchMock, i)).toBe(PRIMARY_MODEL);
+
+    expect(outcome.ok).toBe(false);
+    expect((outcome as { reason: string }).reason).toMatch(/rate limit exceeded/i);
+    expect((outcome as { reason: string }).reason).toMatch(/smaller fallback model .* was skipped/i);
+    expect(statusMessages.some((m) => /too large for the fallback model/i.test(m))).toBe(true);
+  });
+
+  it("still escalates when the request DOES fit the fallback — the gate only blocks what can't succeed", async () => {
+    let calls = 0;
+    const fetchMock = vi.fn().mockImplementation(async () => {
+      calls += 1;
+      return calls <= MAX_RATE_LIMIT_RETRIES + 1 ? jsonResponse(429, RATE_LIMITED_BODY) : jsonResponse(200, SUCCESS_BODY);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const outcome = await callModelWithRateLimitHandling([{ role: "user", content: "hi" }], () => {}, noSleep);
+
+    expect(outcome.ok).toBe(true);
+    expect(modelOf(fetchMock, MAX_RATE_LIMIT_RETRIES + 1)).toBe(FALLBACK_MODEL);
+  });
+
+  it("skips the fallback on a daily-quota error too, reporting the quota reason plus why the fallback was skipped", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(429, DAILY_EXHAUSTED_BODY));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const outcome = await callModelWithRateLimitHandling(oversizedForFallback(), () => {}, noSleep);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1); // no retry ladder, and no doomed fallback call
+    expect(modelOf(fetchMock, 0)).toBe(PRIMARY_MODEL);
+    expect((outcome as { reason: string }).reason).toMatch(/daily token quota is exhausted/i);
+    expect((outcome as { reason: string }).reason).toMatch(/smaller fallback model .* was skipped/i);
+  });
+
+  it("does not attempt an oversized request against the fallback even when the primary is gone entirely", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(jsonResponse(404, { error: { message: "The model does not exist.", code: "model_not_found" } }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const err = await callModelWithRateLimitHandling(oversizedForFallback(), () => {}, noSleep).catch((e) => e);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1); // previously 2: one hopeless fallback attempt
+    expect(err).toBeInstanceOf(AgentModelError);
+    expect(err.message).toMatch(/smaller fallback model .* was skipped/i);
+  });
+
+  it("skips the fallback after tool-call-generation retries when the request is too large for it", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(400, TOOL_CALL_GEN_FAILURE_BODY));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const outcome = await callModelWithRateLimitHandling(oversizedForFallback(), () => {}, noSleep);
+
+    expect(fetchMock).toHaveBeenCalledTimes(MAX_TOOL_CALL_GEN_RETRIES + 1);
+    expect((outcome as { reason: string }).reason).toMatch(/repeatedly failed to generate a valid tool call/i);
+    expect((outcome as { reason: string }).reason).toMatch(/smaller fallback model .* was skipped/i);
   });
 
   it("a fallbackState shared across two calls stays on the fallback for the second call once the first one switched", async () => {
