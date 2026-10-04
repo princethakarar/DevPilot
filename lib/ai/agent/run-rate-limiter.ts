@@ -1,4 +1,4 @@
-import { findActiveAgentRuns, countAgentRunsSince, setAgentRunStopRequested } from "@/lib/db/repositories/agentRuns";
+import { findActiveAgentRuns, countAgentRunsSince, setAgentRunStopRequested, finishAgentRun } from "@/lib/db/repositories/agentRuns";
 import { requestStop } from "./relay";
 
 /**
@@ -28,11 +28,12 @@ const STOP_WAIT_TIMEOUT_MS = 10_000;
  * retry Start is worse than just superseding it. Requests a stop on every
  * active run for this project and polls the DB until each one's status
  * actually clears "running" (same-process, in-memory relay.ts — the
- * orchestrator loop for that run is guaranteed to be in this process),
- * bounded so a run that somehow never stops can't hang the new request
- * forever. Returns false only in that timeout case — the caller should then
- * fail the start rather than risk two runs writing to the same project at
- * once.
+ * orchestrator loop for that run is guaranteed to be in this process).
+ * 
+ * If a run fails to stop within the timeout (usually because the Node process
+ * was restarted/hot-reloaded and the in-memory orchestrator no longer exists
+ * to catch the stop signal), it is forcefully marked as failed to prevent 
+ * zombie runs from permanently locking the project.
  */
 export async function stopActiveProjectRuns(
   playgroundId: string,
@@ -54,7 +55,23 @@ export async function stopActiveProjectRuns(
     if (stillActive.length === 0) return true;
     await sleep(STOP_POLL_INTERVAL_MS);
   }
-  return (await findActiveAgentRuns({ playgroundId })).length === 0;
+
+  // If we reach here, the run didn't stop in time. This almost always means
+  // the in-memory process that was running it died (e.g. dev server restart)
+  // leaving the DB record orphaned in the "running" state. Force clean them.
+  const zombies = await findActiveAgentRuns({ playgroundId });
+  if (zombies.length > 0) {
+    await Promise.all(
+      zombies.map(async (run) => {
+        await finishAgentRun(run.id, {
+          status: "failed",
+          blockedReason: "Forcefully terminated because it stopped responding (likely process restart)."
+        });
+      })
+    );
+  }
+
+  return true;
 }
 
 export async function checkAgentRunAllowed(userId: string, playgroundId: string): Promise<RunAllowedCheck> {
