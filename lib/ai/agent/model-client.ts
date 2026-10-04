@@ -11,42 +11,26 @@ import {
 } from "./token-budget";
 import { recordObservedLimits } from "./model-limits";
 
-/**
- * Default model for the autonomous loop. Previously pinned to
- * "qwen/qwen3-32b" after a head-to-head test found it reliably completed
- * read -> write -> verify -> mark_complete without malformed tool calls —
- * but Groq has since removed that model entirely (requests now 404 with
- * "model_not_found"), which broke every agent run until someone noticed and
- * manually redeployed with AGENT_GROQ_MODEL set. Falling back to the same
- * model the plain chat route already uses successfully (app/api/chat/route.ts)
- * — it's confirmed live/accessible with the existing GROQ_API_KEY. Override
- * via AGENT_GROQ_MODEL if Groq deprecates this one too or a better-tested
- * candidate is found.
- */
-const DEFAULT_AGENT_MODEL = "llama-3.3-70b-versatile";
 
 /**
- * Automatic fallback for the exact failure class that caused the outage
- * above: rate-limit-retry.ts switches to this model — without waiting for a
- * human to notice and redeploy — when the primary is unavailable
- * (renamed/decommissioned), when it exhausts its rate-limit retries, or when
- * it repeatedly fails to produce a valid tool call. Deliberately a
- * different model, not just a different name for the same one, so a
- * provider-side incident scoped to one model (an outage, a TPM budget that's
- * saturated, a deprecation) doesn't take out the fallback along with it.
- * "llama-3.1-8b-instant" is Groq's smaller, separately-rate-limited Llama
- * model — well-established tool-calling support, and its own TPM budget is
- * untouched by whatever exhausted the primary's. Override via
- * AGENT_GROQ_FALLBACK_MODEL.
+ * Default model for the autonomous coding agent loop.
+ * Both primary and fallback run on Groq's free tier.
+ * Override via AGENT_PRIMARY_MODEL / AGENT_FALLBACK_MODEL env vars.
  */
-const DEFAULT_FALLBACK_AGENT_MODEL = "llama-3.1-8b-instant";
+const DEFAULT_AGENT_MODEL = "openai/gpt-oss-120b";
+
+/**
+ * Fallback model on Groq — used by rate-limit-retry.ts when the primary
+ * is rate-limited, unavailable, or repeatedly fails tool calls.
+ */
+const DEFAULT_FALLBACK_AGENT_MODEL = "qwen/qwen3.8-27b";
 
 export function resolvePrimaryModel(): string {
-  return process.env.AGENT_GROQ_MODEL || DEFAULT_AGENT_MODEL;
+  return process.env.AGENT_PRIMARY_MODEL || DEFAULT_AGENT_MODEL;
 }
 
 export function resolveFallbackModel(): string {
-  return process.env.AGENT_GROQ_FALLBACK_MODEL || DEFAULT_FALLBACK_AGENT_MODEL;
+  return process.env.AGENT_FALLBACK_MODEL || DEFAULT_FALLBACK_AGENT_MODEL;
 }
 
 export interface AgentToolCall {
@@ -265,21 +249,17 @@ export async function callAgentModel(
   // attempt at the primary or the fallback model (see resolveFallbackModel).
   model: string = resolvePrimaryModel()
 ): Promise<AgentModelResult> {
-  const apiKey = process.env.GROQ_API_KEY;
-  if (!apiKey) {
-    throw new AgentModelError("GROQ_API_KEY is not configured in the environment.");
-  }
+  // Both the primary and fallback models run on Groq.
+  const provider = "groq" as const;
 
-  // Pace against what Groq will actually BILL for this call (prompt + the
-  // reserved completion ceiling), against THIS model's own window — not
-  // against a prompt-only estimate, and not against a budget shared with the
-  // other model. See token-budget.ts's header comment.
+  // Pace against the token budget before the network call.
   const estimate = estimateBilledTokens(messages, MAX_COMPLETION_TOKENS);
   await waitForTokenBudget(
     estimate,
     model,
     async (waitMs) => {
-      if (onStatus) await onStatus(`Pacing request — waiting ~${Math.ceil(waitMs / 1000)}s to stay under the AI provider's rate limit…`);
+      // Intentionally not calling onStatus here so the UI doesn't show
+      // the pacing message to the user.
     },
     undefined,
     stopSignal ? () => stopSignal.aborted : undefined
@@ -289,11 +269,18 @@ export async function callAgentModel(
   const reservation = reserveEstimate(estimate, model);
   let response: Response;
   try {
-    response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+    const { PROVIDERS } = await import("@/lib/llm/providers");
+    const config = PROVIDERS[provider];
+    if (!config.apiKey) {
+      throw new AgentModelError(`API key for provider "${provider}" is not configured.`);
+    }
+
+    response = await fetch(`${config.baseURL}/chat/completions`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
+        Authorization: `Bearer ${config.apiKey}`,
+        ...config.defaultHeaders,
       },
       body: JSON.stringify({
         model,
@@ -301,39 +288,23 @@ export async function callAgentModel(
         tools: AGENT_TOOLS,
         tool_choice: "auto",
         temperature: 0.2,
-        // Defined in token-budget.ts because Groq RESERVES this against the
-        // TPM window on every call whether the model uses it or not — the
-        // request and the ledger have to read the same constant or they
-        // drift, which is exactly how this went unnoticed at 4096.
-        //
-        // Sizing it is a genuine tradeoff, not a free choice. Too low and
-        // write_file's arguments (a whole file's content in one JSON string
-        // field) get cut mid-generation, which Groq's own tool-call
-        // validation rejects as "Failed to call a function"; too high and
-        // every turn reserves budget it will never use, which at 4096 left
-        // the 6000-TPM fallback model 1,904 tokens of prompt headroom
-        // against a measured 1,547-token floor. See MAX_COMPLETION_TOKENS.
         max_tokens: MAX_COMPLETION_TOKENS,
+        // stream is intentionally NOT set (defaults to false). The agent
+        // needs the complete tool_calls array, not an SSE token stream.
       }),
-      // Combined so a user-requested stop (relay.ts's getStopSignal) aborts
-      // an in-flight Groq call exactly like a timeout would, instead of the
-      // orchestrator loop sitting there for up to 60s after Stop was clicked.
-      signal: stopSignal ? AbortSignal.any([AbortSignal.timeout(60_000), stopSignal]) : AbortSignal.timeout(60_000),
+      signal: stopSignal
+        ? AbortSignal.any([AbortSignal.timeout(60_000), stopSignal])
+        : AbortSignal.timeout(60_000),
     });
   } catch (err) {
-    // Never actually reached Groq, so nothing was billed against the window.
     releaseReservation(reservation);
     throw err;
   }
 
-  // Every response carries the provider's own view of this model's limit —
-  // including error responses, which is exactly when we most want it. Recorded
-  // before any throw below so a 429 still teaches us the real ceiling.
+  // Every response carries the provider's own view of this model's limit.
   recordObservedLimits(model, response.headers);
 
   if (!response.ok) {
-    // A rejected/failed request isn't billed — release, don't reconcile, so
-    // the ledger reflects real consumption, not attempted consumption.
     releaseReservation(reservation);
     const bodyText = await response.text().catch(() => "");
     if (response.status === 429 || response.status === 413) {

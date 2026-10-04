@@ -59,7 +59,16 @@ async function fetchCompletion(
       body: JSON.stringify({ prefix, suffix, language, filename }),
       signal,
     });
-    if (!res.ok) return "";
+    if (!res.ok) {
+      if (res.status === 401) {
+        console.warn("[inline-completion] Not authenticated — log in to DevPilot to use AI suggestions.");
+      } else if (res.status === 429) {
+        console.warn("[inline-completion] Rate limited (30 req/min). Suggestions paused briefly.");
+      } else {
+        console.warn("[inline-completion] API returned", res.status);
+      }
+      return "";
+    }
     const data = await res.json();
     return typeof data.suggestion === "string" ? data.suggestion : "";
   } catch (error) {
@@ -106,12 +115,17 @@ export function registerInlineCompletionProvider(
       ) => {
         if (!isEnabled()) return { items: [] };
 
+        // Extract everything from the model synchronously before any await —
+        // the model proxy can be released (disposed) while an async debounce
+        // or network request is in flight, causing "Proxy has been released".
         const offset = model.getOffsetAt(position);
         const fullText = model.getValue();
         const rawPrefix = fullText.slice(0, offset);
         const rawSuffix = fullText.slice(offset);
         const prefix = rawPrefix.length > PREFIX_CHAR_BUDGET ? rawPrefix.slice(-PREFIX_CHAR_BUDGET) : rawPrefix;
         const suffix = rawSuffix.length > SUFFIX_CHAR_BUDGET ? rawSuffix.slice(0, SUFFIX_CHAR_BUDGET) : rawSuffix;
+        const languageId = model.getLanguageId();
+        const filename = model.uri.path.split("/").pop() || "";
 
         const cacheKey = `${model.uri.toString()}::${prefix.slice(-CACHE_KEY_TAIL_LEN)}::${suffix.slice(0, CACHE_KEY_HEAD_LEN)}`;
         const cached = cacheGet(cacheKey);
@@ -133,15 +147,20 @@ export function registerInlineCompletionProvider(
         const controller = new AbortController();
         token.onCancellationRequested(() => controller.abort());
 
-        const filename = model.uri.path.split("/").pop() || "";
-        const text = await fetchCompletion(prefix, suffix, model.getLanguageId(), filename, controller.signal);
+        const text = await fetchCompletion(prefix, suffix, languageId, filename, controller.signal);
+
+        console.log("[inline-completion provider] Received text:", JSON.stringify(text));
 
         cacheSet(cacheKey, text);
 
-        if (token.isCancellationRequested || !text) return { items: [] };
+        if (token.isCancellationRequested || !text) {
+           console.log("[inline-completion provider] Returning empty items. Cancelled:", token.isCancellationRequested, "Text empty:", !text);
+           return { items: [] };
+        }
+        console.log("[inline-completion provider] Returning suggestion:", text);
         return { items: [{ insertText: text, range: emptyRangeAt(monaco, position) }] };
       },
-      freeInlineCompletions: () => {
+      disposeInlineCompletions: () => {
         // No per-item disposables allocated above — nothing to free.
       },
     })

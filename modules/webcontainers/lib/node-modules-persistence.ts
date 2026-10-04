@@ -160,7 +160,10 @@ async function regenerateBinLinks(instance: WebContainer): Promise<number> {
   // against, and in practice the spawned process failed with MODULE_NOT_FOUND
   // against an absolute path that instance.fs had just written successfully.
   // Relative-to-cwd paths worked correctly in that same test.
-  const scriptPath = ".devpilot/regenerate-bin.js";
+  // .cjs extension forces Node to treat this as CommonJS regardless of the
+  // template's package.json "type" field — templates with "type":"module"
+  // cause Node to reject require() in a plain .js file with ESM scope errors.
+  const scriptPath = ".devpilot/regenerate-bin.cjs";
 
   try {
     await instance.fs.mkdir(".devpilot", { recursive: true });

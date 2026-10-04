@@ -64,16 +64,6 @@ export const PlaygroundEditor = ({
     editor.updateOptions({
       ...defaultEditorOptions,
       renderLineHighlight: highlightCurrentLine ? "all" : "none",
-      // Enables Monaco's own native inline-suggest widget — ghost text
-      // rendering, Tab-to-accept (only when a suggestion is showing; falls
-      // through to normal indentation otherwise), and Esc-to-dismiss are all
-      // handled internally by Monaco once a provider is registered. No
-      // custom Tab command or manual decoration management here on purpose:
-      // that's what previously made Tab behave inconsistently.
-      inlineSuggest: {
-        enabled: true,
-        mode: "prefix",
-      },
     })
 
     configureMonaco(monaco)

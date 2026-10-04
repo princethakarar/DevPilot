@@ -1,5 +1,6 @@
 import { error } from "console";
 import { NextRequest, NextResponse } from "next/server";
+import { callCodingAgent } from "@/lib/llm/agent-client";
 
 interface ChatMessage {
   role: "user" | "assistant";
@@ -12,14 +13,6 @@ interface ChatRequest {
 }
 
 async function generateAIResponse(messages: ChatMessage[]): Promise<string> {
-  const apiKey = process.env.GROQ_API_KEY;
-  if (!apiKey) {
-    console.warn("GROQ_API_KEY is not configured in .env file.");
-    return "Please configure GROQ_API_KEY in your environment.";
-  }
-
-  const model = process.env.GROQ_MODEL || "llama-3.3-70b-versatile";
-
   const systemPrompt = `You are a helpful AI coding assistant. You help developers with:
 - Code explanations and debugging
 - Best practices and architecture advice  
@@ -29,41 +22,23 @@ async function generateAIResponse(messages: ChatMessage[]): Promise<string> {
 
 Always provide clear, practical answers. Use proper code formatting when showing examples.`;
 
-  const fullMessages = [{ role: "system", content: systemPrompt }, ...messages];
+  const fullMessages = [
+    { role: "system" as const, content: systemPrompt },
+    ...messages.map((m) => ({ role: m.role as "user" | "assistant", content: m.content })),
+  ];
 
-  try {
-    const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model,
-        messages: fullMessages,
-        temperature: 0.7,
-        max_tokens: 1000,
-      }),
-    });
+  const data = await callCodingAgent(fullMessages, {
+    temperature: 0.7,
+    max_tokens: 1000,
+  });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Groq API error: ${response.statusText} - ${errorText}`);
-    }
-
-    const data = await response.json();
-    const aiResponse = data.choices?.[0]?.message?.content || "";
-
-    if (!aiResponse) {
-      throw new Error("No response from AI model");
-    }
-
-    return aiResponse.trim();
-  } catch (error) {
-    console.error("AI generation error:", error);
-    throw new Error("Failed to generate AI response");
+  const aiResponse: string = data.choices?.[0]?.message?.content || "";
+  if (!aiResponse) {
+    throw new Error("No response from AI model");
   }
+  return aiResponse.trim();
 }
+
 
 export async function POST(req: NextRequest) {
   try {

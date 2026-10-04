@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { currentUser } from "@/modules/auth/actions";
 import { checkInlineCompletionRateLimit } from "@/lib/ai/rate-limiter";
 import { redactSecrets } from "@/lib/ai/redact-secrets";
+import { getInlineSuggestion } from "@/lib/llm/inline-client";
+
 
 interface InlineCompletionRequest {
   prefix: string;
@@ -30,7 +32,7 @@ function trimToBudget(prefix: string, suffix: string) {
  *  suspenders, not the primary control (the primary control is using the
  *  actual FIM endpoint instead of a chat prompt in the first place). */
 function cleanCompletion(text: string): string {
-  let cleaned = text.replace(/^```[\w-]*\n?/, "").replace(/\n?```$/, "");
+  let cleaned = text.replace(/^```[\w-]*\n?/, "").replace(/\n?```\s*$/, "");
   // Defensively cut anything that looks like the model slipped into
   // explaining itself on a new paragraph rather than just completing code.
   const explanationMarker = cleaned.search(/\n\s*(Here|This|Note:|Explanation:)\b/);
@@ -66,52 +68,16 @@ export async function POST(request: NextRequest) {
   // FIM endpoint itself takes only prompt/suffix/model — it infers language from
   // the code itself, so they aren't forwarded to the request body below.
 
-  const apiKey = process.env.MISTRAL_API_KEY;
-  if (!apiKey) {
-    console.warn("MISTRAL_API_KEY is not configured in .env file.");
-    return NextResponse.json({ suggestion: "" }, { status: 200 });
-  }
-
-  const model = process.env.MISTRAL_CODESTRAL_MODEL || "codestral-latest";
-
   const trimmed = trimToBudget(prefix, suffix);
   const safePrefix = redactSecrets(trimmed.prefix);
   const safeSuffix = redactSecrets(trimmed.suffix);
 
-  try {
-    const response = await fetch("https://api.mistral.ai/v1/fim/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model,
-        prompt: safePrefix,
-        suffix: safeSuffix,
-        temperature: 0.2,
-        max_tokens: 100,
-        stop: ["\n\n"],
-      }),
-      // Codestral's own FIM endpoint is fast, but this is ghost-text — a slow
-      // response is worse than no response. Bail well before the frontend's
-      // own debounce+network round trip would feel broken.
-      signal: AbortSignal.timeout(4000),
-    });
+  const raw = await getInlineSuggestion(safePrefix, safeSuffix);
+  const suggestion = cleanCompletion(raw);
 
-    if (!response.ok) {
-      const errorBody = await response.text().catch(() => "");
-      console.error(`[inline-completion] Mistral API error ${response.status}: ${errorBody.slice(0, 300)}`);
-      return NextResponse.json({ suggestion: "" }, { status: 200 });
-    }
+  // DEBUG — remove once inline suggestions are confirmed working
+  console.log("[inline-completion] raw:", JSON.stringify(raw));
+  console.log("[inline-completion] suggestion:", JSON.stringify(suggestion));
 
-    const data = await response.json();
-    const raw: string = data.choices?.[0]?.message?.content ?? "";
-    const suggestion = cleanCompletion(raw);
-
-    return NextResponse.json({ suggestion });
-  } catch (error) {
-    console.error("[inline-completion] Request to Mistral failed:", error instanceof Error ? error.message : error);
-    return NextResponse.json({ suggestion: "" }, { status: 200 });
-  }
+  return NextResponse.json({ suggestion });
 }

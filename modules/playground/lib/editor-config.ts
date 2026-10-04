@@ -378,5 +378,14 @@ export const defaultEditorOptions = {
   // Sticky scroll
   stickyScroll: {
     enabled: true
-  }
+  },
+
+  // Inline AI ghost-text suggestions — must live here (not only in
+  // handleEditorDidMount) so it survives re-renders where @monaco-editor/react
+  // re-applies the options prop and would silently overwrite anything set only
+  // via a one-time updateOptions() call.
+  inlineSuggest: {
+    enabled: true,
+    mode: "prefix",
+  },
 };
