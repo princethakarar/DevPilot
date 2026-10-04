@@ -78,6 +78,9 @@ export async function POST(request: NextRequest) {
   // DEBUG — remove once inline suggestions are confirmed working
   console.log("[inline-completion] raw:", JSON.stringify(raw));
   console.log("[inline-completion] suggestion:", JSON.stringify(suggestion));
+  
+  const fs = require('fs');
+  fs.writeFileSync('e:/Web Devlopment/DevPilot/debug-inline.json', JSON.stringify({ raw, suggestion }));
 
   return NextResponse.json({ suggestion });
 }
