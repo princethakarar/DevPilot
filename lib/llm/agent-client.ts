@@ -47,7 +47,7 @@ export async function callCodingAgent(
     if (options.stream) {
       return await callLLM("groq", messages, { ...options, stream: true, model: PRIMARY_MODEL });
     }
-    return await callLLM("groq", messages, { ...options, model: PRIMARY_MODEL });
+    return await callLLM("groq", messages, { ...options, stream: false, model: PRIMARY_MODEL });
   } catch (err) {
     // Only fall through on rate-limit. Any other failure propagates immediately.
     if (!(err instanceof LLMError) || err.code !== "rate_limit") {
@@ -65,7 +65,7 @@ export async function callCodingAgent(
     if (options.stream) {
       return await callLLM("groq", messages, { ...options, stream: true, model: FALLBACK_MODEL });
     }
-    return await callLLM("groq", messages, { ...options, model: FALLBACK_MODEL });
+    return await callLLM("groq", messages, { ...options, stream: false, model: FALLBACK_MODEL });
   } catch (err) {
     const detail = err instanceof LLMError ? err.message : String(err);
     throw new LLMError(
