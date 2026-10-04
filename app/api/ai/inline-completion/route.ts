@@ -4,6 +4,8 @@ import { checkInlineCompletionRateLimit } from "@/lib/ai/rate-limiter";
 import { redactSecrets } from "@/lib/ai/redact-secrets";
 import { getInlineSuggestion } from "@/lib/llm/inline-client";
 
+export const maxDuration = 15;
+
 
 interface InlineCompletionRequest {
   prefix: string;
