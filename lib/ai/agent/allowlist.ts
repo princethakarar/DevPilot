@@ -108,6 +108,13 @@ export function checkCommandAllowed(
     };
   }
 
+  if (/\b(dev|start|watch|serve)\b/i.test(command) || /dev|start|watch|serve/i.test(command)) {
+    return {
+      allowed: false,
+      reason: "Interactive/dev server commands are not permitted as verification steps — run build or test instead.",
+    };
+  }
+
   for (const hint of FORBIDDEN_HINTS) {
     if (hint.test.test(command)) return { allowed: false, reason: hint.reason };
   }

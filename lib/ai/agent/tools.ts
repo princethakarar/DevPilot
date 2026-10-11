@@ -84,7 +84,7 @@ export const AGENT_TOOLS = [
     type: "function",
     function: {
       name: "mark_complete",
-      description: "Call this when the task is verifiably done (you have run a verification command and it passed). Ends the run.",
+      description: "Call this when the task is complete. For code/logic changes, verify with build/test if available; for direct edits, styling, or documentation, call this immediately after writing the file. Ends the run.",
       parameters: {
         type: "object",
         properties: { summary: { type: "string", description: "A concise summary of what was done." } },
@@ -128,5 +128,5 @@ Rules:
 - If a command fails, fix the actual cause — don't repeat a fix that didn't work; try something genuinely different, or call mark_blocked if you're out of ideas.
 - If run_command is rejected by the allowlist, don't route around it (no chaining/piping/alternate tools) — find a different permitted way, or call mark_blocked.
 - If the task is ambiguous, impossible, or you're missing information you can't obtain, call mark_blocked with a specific reason rather than guessing.
-- Call mark_complete only with verifiable evidence (a passing build/test/lint run) and a concise summary of what changed.
+- Call mark_complete as soon as the requested task is fulfilled. Run a verification command only when appropriate (e.g., bug fixes, TypeScript changes) — do not run commands for simple text/style/markup changes.
 - Never ask the user a question — you cannot receive a reply. Proceed on reasonable judgment, or call mark_blocked.`;

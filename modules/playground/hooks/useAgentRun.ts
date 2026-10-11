@@ -63,11 +63,8 @@ export function useAgentRun({ projectId, getInstance, onFileSynced }: UseAgentRu
 
   const runIdRef = useRef<string | null>(null);
   const readerRef = useRef<ReadableStreamDefaultReader<Uint8Array> | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  // Stop can be clicked in the window between the Stop button appearing
-  // (status flips to "running" synchronously in start()) and runIdRef
-  // actually being populated (only after the POST's response headers land).
-  // Without this, that click silently no-ops — nothing to POST to yet.
   const stopRequestedRef = useRef(false);
   const [stopRequested, setStopRequested] = useState(false);
 
@@ -75,7 +72,7 @@ export function useAgentRun({ projectId, getInstance, onFileSynced }: UseAgentRu
     try {
       await fetch(`/api/ai/agent/run/${id}/stop`, { method: "POST" });
     } catch {
-      // The reader loop will still end once the server finishes its stop sequence.
+      // Best-effort
     }
   }, []);
 
@@ -93,13 +90,70 @@ export function useAgentRun({ projectId, getInstance, onFileSynced }: UseAgentRu
         body: JSON.stringify({ callId, ...result }),
       });
     } catch {
-      // Best-effort — the server-side wait will time out and the loop will surface the failure itself.
+      // Best-effort
     }
   }, []);
+
+  // Format tool calls and results into clean, human-readable messages instead of raw JSON
+  const formatToolCallMessage = (tool: string, args: Record<string, unknown> = {}): string => {
+    switch (tool) {
+      case "list_files":
+        return args.path ? `Listing files in ${args.path}` : "Listing project files";
+      case "read_file":
+        return `Reading ${args.path}`;
+      case "read_files": {
+        const paths = Array.isArray(args.paths) ? args.paths.join(", ") : "";
+        return `Reading files: ${paths}`;
+      }
+      case "search_codebase":
+        return `Searching codebase for "${args.query}"`;
+      case "write_file":
+        return `Updating ${args.path}`;
+      case "run_command":
+        return `$ ${args.command}`;
+      case "mark_complete":
+        return `Completed: ${args.summary ?? "Done"}`;
+      case "mark_blocked":
+        return `Blocked: ${args.reason ?? "Cannot proceed"}`;
+      default:
+        return `${tool}(${truncate(args, 60)})`;
+    }
+  };
+
+  const formatToolResultMessage = (tool: string, result: unknown): string | null => {
+    if (typeof result === "string" && result.startsWith("OK: wrote")) {
+      return result;
+    }
+    if (typeof result === "string" && (result.startsWith("ERROR") || result.startsWith("REJECTED"))) {
+      return result;
+    }
+    switch (tool) {
+      case "list_files":
+        return "Files listed successfully";
+      case "read_file":
+      case "read_files":
+        return "File content read";
+      case "search_codebase": {
+        const parsed = typeof result === "string" ? JSON.parse(result || "{}") : result;
+        const count = Array.isArray((parsed as any)?.results) ? (parsed as any).results.length : 0;
+        return `Found ${count} match${count === 1 ? "" : "es"}`;
+      }
+      case "write_file":
+        return "File updated";
+      default:
+        return null;
+    }
+  };
 
   const handleEvent = useCallback(
     async (event: RelayEvent) => {
       switch (event.type) {
+        case "init":
+          if (event.callId) {
+            runIdRef.current = event.callId;
+            setRunId(event.callId);
+          }
+          break;
         case "status":
           appendLog({ ts: Date.now(), type: "status", message: event.message ?? "" });
           break;
@@ -107,13 +161,19 @@ export function useAgentRun({ projectId, getInstance, onFileSynced }: UseAgentRu
           setIterationCount((c) => c + 1);
           appendLog({ ts: Date.now(), type: "model", message: event.message ?? "" });
           break;
-        case "tool_call":
+        case "tool_call": {
           setToolCallCount((c) => c + 1);
-          appendLog({ ts: Date.now(), type: "tool_call", message: `${event.tool}(${truncate(event.args, 120)})` });
+          const cleanMsg = formatToolCallMessage(event.tool ?? "", event.args);
+          appendLog({ ts: Date.now(), type: "tool_call", message: cleanMsg });
           break;
-        case "tool_result":
-          appendLog({ ts: Date.now(), type: "tool_result", message: `${event.tool} → ${truncate(event.result)}` });
+        }
+        case "tool_result": {
+          const cleanResult = formatToolResultMessage(event.tool ?? "", event.result);
+          if (cleanResult) {
+            appendLog({ ts: Date.now(), type: "tool_result", message: cleanResult });
+          }
           break;
+        }
         case "checkpoint":
           appendLog({ ts: Date.now(), type: "checkpoint", message: event.message ?? "" });
           break;
@@ -129,7 +189,7 @@ export function useAgentRun({ projectId, getInstance, onFileSynced }: UseAgentRu
               if (folder) await instance.fs.mkdir(folder, { recursive: true });
               await instance.fs.writeFile(event.path, event.content);
             } catch {
-              // Non-fatal — the DB write already succeeded (authoritative); this is just live-editor/WC mirroring.
+              // Non-fatal mirroring
             }
           }
           if (event.path && typeof event.content === "string") onFileSynced?.(event.path, event.content);
@@ -143,14 +203,6 @@ export function useAgentRun({ projectId, getInstance, onFileSynced }: UseAgentRu
             await postToolResult(callId, { stdout: "", stderr: "WebContainer is not available in this browser tab.", exitCode: 1 });
             break;
           }
-          // Kill and report a clean timeout a comfortable margin before the
-          // server's own deadline (see relay.ts's requestBrowserCommand) so a
-          // genuinely slow-but-alive command gets a real result instead of
-          // the server giving up first and silently discarding whatever we
-          // post after. The margin needs to cover kill() + draining any
-          // remaining buffered output + the network round trip to
-          // /tool-result, not just network latency — 3s wasn't enough in
-          // practice for a build that was killed right at the wire.
           const budgetMs = Math.max((event.timeoutMs ?? 45_000) - 15_000, 5000);
           try {
             const parts = (event.command ?? "").trim().split(/\s+/);
@@ -163,7 +215,7 @@ export function useAgentRun({ projectId, getInstance, onFileSynced }: UseAgentRu
               try {
                 proc.kill();
               } catch {
-                // Best-effort — if kill() itself fails the process is likely already gone.
+                // Best-effort
               }
             }, budgetMs);
 
@@ -196,7 +248,7 @@ export function useAgentRun({ projectId, getInstance, onFileSynced }: UseAgentRu
           break;
         }
         case "done": {
-          setStatus((event.status as AgentRunUiStatus) ?? "failed");
+          setStatus((event.status as AgentRunUiStatus) ?? "completed");
           setSummary(event.summary ?? null);
           setBlockedReason(event.blockedReason ?? null);
           const id = runIdRef.current;
@@ -209,7 +261,7 @@ export function useAgentRun({ projectId, getInstance, onFileSynced }: UseAgentRu
                 setCheckpointAfterId(run?.checkpointAfterId ?? null);
               }
             } catch {
-              // Checkpoint links are a convenience for the UI, not required for the run's own correctness.
+              // Non-fatal
             }
           }
           break;
@@ -236,11 +288,15 @@ export function useAgentRun({ projectId, getInstance, onFileSynced }: UseAgentRu
       stopRequestedRef.current = false;
       setStopRequested(false);
 
+      const abortController = new AbortController();
+      abortControllerRef.current = abortController;
+
       try {
         const res = await fetch("/api/ai/agent/run", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ projectId, task }),
+          signal: abortController.signal,
         });
 
         if (!res.ok || !res.body) {
@@ -250,10 +306,12 @@ export function useAgentRun({ projectId, getInstance, onFileSynced }: UseAgentRu
           return;
         }
 
-        const id = res.headers.get("X-Run-Id");
-        runIdRef.current = id;
-        setRunId(id);
-        if (id && stopRequestedRef.current) void postStop(id);
+        const id = res.headers.get("X-Run-Id") || res.headers.get("x-run-id");
+        if (id) {
+          runIdRef.current = id;
+          setRunId(id);
+          if (stopRequestedRef.current) void postStop(id);
+        }
 
         const reader = res.body.getReader();
         readerRef.current = reader;
@@ -277,11 +335,19 @@ export function useAgentRun({ projectId, getInstance, onFileSynced }: UseAgentRu
             }
           }
         }
-      } catch (err) {
-        setStatus((prev) => (prev === "running" ? "failed" : prev));
-        setStartError({ message: err instanceof Error ? err.message : "Connection to the agent lost." });
+      } catch (err: any) {
+        if (err?.name === "AbortError") {
+          setStatus("stopped");
+        } else {
+          setStatus((prev) => (prev === "running" ? "failed" : prev));
+          setStartError({ message: err instanceof Error ? err.message : "Connection to the agent lost." });
+        }
       } finally {
         readerRef.current = null;
+        abortControllerRef.current = null;
+        // Guaranteed reset: if the stream closed and status was still "running", mark finished
+        setStatus((prev) => (prev === "running" ? "completed" : prev));
+        setStopRequested(false);
       }
     },
     [projectId, handleEvent, postStop]
@@ -289,15 +355,18 @@ export function useAgentRun({ projectId, getInstance, onFileSynced }: UseAgentRu
 
   const stop = useCallback(async () => {
     setStopRequested(true);
+    // 1. Immediately abort client-side fetch & cancel stream
+    abortControllerRef.current?.abort();
+    readerRef.current?.cancel().catch(() => {});
+    setStatus("stopped");
+
+    // 2. Notify server
     const id = runIdRef.current;
-    if (!id) {
-      // Run hasn't been assigned an id yet (still waiting on the start
-      // request's response) — flag it so start() fires the stop the moment
-      // the id arrives, instead of this click silently doing nothing.
+    if (id) {
+      await postStop(id);
+    } else {
       stopRequestedRef.current = true;
-      return;
     }
-    await postStop(id);
   }, [postStop]);
 
   useEffect(() => {

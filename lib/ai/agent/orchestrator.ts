@@ -244,6 +244,19 @@ export async function runAgentOrchestrator({ runId, playgroundId, task }: RunAge
       messages.push(result.message);
 
       if (result.toolCalls.length === 0) {
+        const recentMessages = messages.slice(-6);
+        const hasRecentWrite = recentMessages.some(
+          (m) => m.name === "write_file" || m.tool_calls?.some((tc) => tc.function?.name === "write_file")
+        );
+
+        if (hasRecentWrite) {
+          summary = result.message.content || "Task completed.";
+          finalStatus = "completed";
+          blockedReason = null;
+          await log(runId, "status", `Completed: ${summary}`);
+          break loop;
+        }
+
         consecutiveNoToolCalls += 1;
         if (consecutiveNoToolCalls >= 2) {
           finalStatus = "blocked";

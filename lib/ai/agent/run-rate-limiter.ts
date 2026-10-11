@@ -9,7 +9,7 @@ import { requestStop } from "./relay";
  */
 export const AGENT_RUN_LIMITS = {
   maxConcurrentPerUser: 1,
-  maxRunsPerHourPerUser: 8,
+  maxRunsPerHourPerUser: 50,
 } as const;
 
 export interface RunAllowedCheck {

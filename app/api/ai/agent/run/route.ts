@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { currentUser } from "@/modules/auth/actions";
 import { findPlaygroundById } from "@/lib/db/repositories/playgrounds";
-import { createAgentRun } from "@/lib/db/repositories/agentRuns";
+import { createAgentRun, finishAgentRun } from "@/lib/db/repositories/agentRuns";
 import { checkAgentRunAllowed, stopActiveProjectRuns } from "@/lib/ai/agent/run-rate-limiter";
-import { registerRunEmitter, unregisterRunEmitter, clearStop, type RelayEvent } from "@/lib/ai/agent/relay";
+import { registerRunEmitter, unregisterRunEmitter, clearStop, requestStop, type RelayEvent } from "@/lib/ai/agent/relay";
 import { runAgentOrchestrator } from "@/lib/ai/agent/orchestrator";
 
 // Long-running (up to the 5-minute agent cap) SSE response — must run on the
@@ -84,6 +84,8 @@ export async function POST(req: NextRequest) {
         safeEnqueue(`data: ${JSON.stringify(event)}\n\n`);
       };
       registerRunEmitter(run.id, emit);
+      // Immediately announce runId to the client
+      emit({ type: "init" as any, callId: run.id } as any);
 
       // Heartbeat so intermediaries (proxies, the browser fetch reader) don't
       // treat a long "thinking"/build gap as a dead connection.
@@ -107,7 +109,9 @@ export async function POST(req: NextRequest) {
         });
     },
     cancel() {
+      requestStop(run.id);
       unregisterRunEmitter(run.id);
+      finishAgentRun(run.id, { status: "stopped", blockedReason: "Client disconnected." }).catch(() => {});
     },
   });
 
@@ -118,6 +122,7 @@ export async function POST(req: NextRequest) {
       "Cache-Control": "no-cache, no-transform",
       Connection: "keep-alive",
       "X-Run-Id": run.id,
+      "Access-Control-Expose-Headers": "X-Run-Id",
     },
   });
 }
