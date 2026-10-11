@@ -24,7 +24,7 @@ export async function getInlineSuggestion(
     }
 
     const data = await response.json();
-    return data?.choices?.[0]?.message?.content || "";
+    return data?.choices?.[0]?.text ?? data?.choices?.[0]?.message?.content ?? "";
   } catch (error) {
     return "";
   }
